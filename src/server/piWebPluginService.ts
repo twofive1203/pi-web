@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
@@ -27,7 +28,7 @@ export interface ConfiguredPiPackage {
 }
 
 export interface PiPackageProvider {
-  listPackages(): ConfiguredPiPackage[];
+  listPackages(): ConfiguredPiPackage[] | Promise<ConfiguredPiPackage[]>;
   getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
 }
 
@@ -85,6 +86,44 @@ export class DefaultPiPackageProvider implements PiPackageProvider {
   }
 }
 
+export class OmpPiPackageProvider implements PiPackageProvider {
+  private installed = new Map<string, string>();
+
+  constructor(private readonly cwd = process.cwd(), private readonly agentDir?: string) {}
+
+  async listPackages(): Promise<ConfiguredPiPackage[]> {
+    const roots = await this.installedPluginRoots();
+    this.installed = new Map(roots.map((root) => [root.source, root.path]));
+    return roots.map((root) => ({ source: root.source, scope: "user", installedPath: root.path }));
+  }
+
+  getInstalledPath(source: string): string | undefined {
+    return this.installed.get(source);
+  }
+
+  private async installedPluginRoots(): Promise<{ source: string; path: string }[]> {
+    const piUtils = await import("@oh-my-pi/pi-utils").catch(() => undefined);
+    if (piUtils === undefined) return [];
+    if (this.agentDir !== undefined) piUtils.setAgentDir(this.agentDir);
+    const modulesRoot = piUtils.getPluginsNodeModules();
+    const entries = await readdir(modulesRoot, { withFileTypes: true }).catch(() => []);
+    const roots: { source: string; path: string }[] = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.name.startsWith("@") && entry.isDirectory()) {
+        const scopeRoot = join(modulesRoot, entry.name);
+        const scopedEntries = await readdir(scopeRoot, { withFileTypes: true }).catch(() => []);
+        for (const scopedEntry of scopedEntries) {
+          if (scopedEntry.isDirectory()) roots.push({ source: `${entry.name}/${scopedEntry.name}`, path: join(scopeRoot, scopedEntry.name) });
+        }
+      } else if (entry.isDirectory()) {
+        roots.push({ source: entry.name, path: join(modulesRoot, entry.name) });
+      }
+    }
+    return roots;
+  }
+}
+
 export class PiWebPluginService {
   private readonly roots: LocalPluginRoot[];
   private readonly packageProvider: PiPackageProvider | undefined;
@@ -92,9 +131,9 @@ export class PiWebPluginService {
 
   constructor(options: PiWebPluginServiceOptions = {}) {
     const cwd = options.cwd ?? process.cwd();
-    const agentDir = options.agentDir ?? getAgentDir();
+    const agentDir = options.agentDir ?? defaultAgentDirForRuntime();
     this.roots = options.roots ?? defaultPluginRoots(cwd);
-    this.packageProvider = options.packageProvider === false ? undefined : options.packageProvider ?? new DefaultPiPackageProvider(cwd, agentDir);
+    this.packageProvider = options.packageProvider === false ? undefined : options.packageProvider ?? defaultPackageProvider(cwd, agentDir);
     this.configProvider = options.configProvider ?? (() => loadPiWebConfig({ cwd }).config);
   }
 
@@ -156,7 +195,7 @@ export class PiWebPluginService {
 
   private async discoverPiPackagePlugins(packageProvider: PiPackageProvider): Promise<PluginRecord[]> {
     const plugins: PluginRecord[] = [];
-    for (const configuredPackage of packageProvider.listPackages()) {
+    for (const configuredPackage of await packageProvider.listPackages()) {
       const root = configuredPackage.installedPath ?? packageProvider.getInstalledPath(configuredPackage.source, configuredPackage.scope);
       if (root === undefined) continue;
       try {
@@ -167,6 +206,18 @@ export class PiWebPluginService {
     }
     return plugins;
   }
+}
+
+function defaultAgentDirForRuntime(): string {
+  if (process.env["PI_WEB_AGENT_RUNTIME"] !== "omp") return getAgentDir();
+  const configured = process.env["PI_WEB_OMP_AGENT_DIR"] ?? process.env["PI_CODING_AGENT_DIR"];
+  return configured === undefined || configured === "" ? join(homedir(), ".omp", "agent") : configured;
+}
+
+function defaultPackageProvider(cwd: string, agentDir: string): PiPackageProvider {
+  return process.env["PI_WEB_AGENT_RUNTIME"] === "omp"
+    ? new OmpPiPackageProvider(cwd, agentDir)
+    : new DefaultPiPackageProvider(cwd, agentDir);
 }
 
 function defaultPluginRoots(cwd: string): LocalPluginRoot[] {

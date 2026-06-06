@@ -578,17 +578,17 @@ describe("PiSessionService", () => {
     hub.globalEvents.length = 0;
 
     authStorage.logout("anthropic");
-    service.applyAuthChange({ removedProviderId: "anthropic" });
-    service.applyAuthChange({ removedProviderId: "anthropic" });
+    await service.applyAuthChange({ removedProviderId: "anthropic" });
+    await service.applyAuthChange({ removedProviderId: "anthropic" });
 
     const warningCount = () => hub.sessionEvents.filter(({ event }) => event.type === "command.output" && event.level === "error" && event.message.includes("anthropic/claude-3-5-sonnet-20241022")).length;
     expect(warningCount()).toBe(1);
     expect(hub.globalEvents.some((event) => event.type === "status.update" && event.status.sessionId === "auth-session")).toBe(true);
 
     authStorage.set("anthropic", { type: "api_key", key: "sk-new" });
-    service.applyAuthChange();
+    await service.applyAuthChange();
     authStorage.logout("anthropic");
-    service.applyAuthChange({ removedProviderId: "anthropic" });
+    await service.applyAuthChange({ removedProviderId: "anthropic" });
     expect(warningCount()).toBe(2);
 
     await service.dispose();

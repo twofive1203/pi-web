@@ -317,6 +317,7 @@ export interface TerminalCommandRunFilter {
 export type PiWebServiceComponent = "web" | "sessiond";
 export type PiWebStatusSeverity = "info" | "warning" | "error";
 export type PiWebInstallationKind = "pi-package" | "npm-global" | "local" | "unknown";
+export type PiWebAgentRuntime = "earendil" | "omp";
 
 export interface PiWebInstallationInfo {
   kind: PiWebInstallationKind;
@@ -334,6 +335,7 @@ export interface PiWebComponentStatus {
   stale: boolean;
   available: boolean;
   installation?: PiWebInstallationInfo;
+  agentRuntime?: PiWebAgentRuntime;
   error?: string;
 }
 

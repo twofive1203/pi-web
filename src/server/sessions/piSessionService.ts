@@ -308,7 +308,7 @@ export class PiSessionService {
 
   async availableModels(sessionId: string): Promise<ClientSessionModel[]> {
     const session = await this.getOrOpen(sessionId);
-    session.modelRegistry.refresh();
+    await refreshRegistry(session.modelRegistry);
     const models = session.scopedModels.length > 0
       ? session.scopedModels.map((scoped) => scoped.model)
       : session.modelRegistry.getAvailable();
@@ -318,7 +318,7 @@ export class PiSessionService {
   async setModel(sessionId: string, provider: string, modelId: string): Promise<ClientSessionStatus> {
     await this.assertWritable(sessionId);
     const session = await this.getOrOpen(sessionId);
-    session.modelRegistry.refresh();
+    await refreshRegistry(session.modelRegistry);
     const candidates = session.scopedModels.length > 0
       ? session.scopedModels.map((scoped) => scoped.model)
       : session.modelRegistry.getAvailable();
@@ -744,11 +744,11 @@ export class PiSessionService {
     this.publishSessionName(session);
   }
 
-  applyAuthChange(change: AuthChange = {}): void {
-    this.modelRegistry.refresh();
+  async applyAuthChange(change: AuthChange = {}): Promise<void> {
+    await refreshRegistry(this.modelRegistry);
     for (const active of this.active.values()) {
       const { session } = active.runtime;
-      session.modelRegistry.refresh();
+      await refreshRegistry(session.modelRegistry);
       this.syncCurrentModelAuthWarning(session, change.removedProviderId);
       this.publishStatus(session);
     }
@@ -1009,6 +1009,19 @@ function archiveInputFromCandidate(candidate: WorkspaceArchiveCandidate): Archiv
 
 function sessionHasActiveWork(session: PiAgentSession, extraQueuedMessageCount = 0): boolean {
   return session.isStreaming || session.isCompacting || session.isBashRunning || session.pendingMessageCount + extraQueuedMessageCount > 0;
+}
+
+interface RefreshableRegistry {
+  refresh(): void | Promise<void>;
+}
+
+async function refreshRegistry(registry: RefreshableRegistry): Promise<void> {
+  const result = registry.refresh();
+  if (isPromiseLike(result)) await result;
+}
+
+function isPromiseLike(value: void | Promise<void>): value is Promise<void> {
+  return value !== undefined && "then" in value;
 }
 
 function sessionDisplayName(session: PiAgentSession): string {

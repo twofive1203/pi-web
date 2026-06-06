@@ -80,6 +80,7 @@ export async function getPiWebComponentStatus(component: PiWebServiceComponent):
     stale: isInstalledVersionNewer(installedVersion, runtimeVersion),
     available: true,
     installation,
+    ...(component === "sessiond" ? { agentRuntime: currentAgentRuntime() } : {}),
   };
 }
 
@@ -235,8 +236,13 @@ function unavailableSessiond(error: string): PiWebComponentStatus {
     label: "Session daemon",
     stale: false,
     available: false,
+    agentRuntime: currentAgentRuntime(),
     error,
   };
+}
+
+function currentAgentRuntime(): "earendil" | "omp" {
+  return process.env["PI_WEB_AGENT_RUNTIME"] === "omp" ? "omp" : "earendil";
 }
 
 async function getLatestReleaseStatus(currentVersion: string): Promise<PiWebReleaseStatus> {

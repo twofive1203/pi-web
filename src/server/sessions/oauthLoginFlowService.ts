@@ -1,9 +1,29 @@
 import crypto from "node:crypto";
-import type { OAuthLoginCallbacks, OAuthSelectPrompt, OAuthPrompt } from "@earendil-works/pi-ai";
-import type { AuthStorage } from "@earendil-works/pi-coding-agent";
 import type { CommandOption, OAuthFlowState } from "../../shared/apiTypes.js";
 
-type OAuthLoginStorage = Pick<AuthStorage, "login">;
+interface OAuthPrompt {
+  message: string;
+  placeholder?: string;
+  allowEmpty?: boolean;
+}
+
+interface OAuthSelectPrompt {
+  message: string;
+  options: readonly { id: string; label: string }[];
+}
+
+interface OAuthLoginCallbacks {
+  signal?: AbortSignal;
+  onAuth(info: { url: string; instructions?: string }): void;
+  onPrompt(prompt: OAuthPrompt): Promise<string>;
+  onManualCodeInput(): Promise<string>;
+  onSelect(prompt: OAuthSelectPrompt): Promise<string | undefined>;
+  onProgress(message: string): void;
+}
+
+interface OAuthLoginStorage {
+  login(providerId: string, callbacks: OAuthLoginCallbacks): Promise<void>;
+}
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 interface PendingOAuthRequest {

@@ -21,6 +21,7 @@ export function parsePiWebComponentStatus(value: unknown): PiWebComponentStatus 
   const stale = value["stale"];
   const available = value["available"];
   const error = value["error"];
+  const agentRuntime = value["agentRuntime"];
   const installation = parsePiWebInstallationInfo(value["installation"]);
   if (component !== "web" && component !== "sessiond") return undefined;
   if (typeof label !== "string" || label === "" || typeof stale !== "boolean" || typeof available !== "boolean") return undefined;
@@ -32,6 +33,7 @@ export function parsePiWebComponentStatus(value: unknown): PiWebComponentStatus 
     stale,
     available,
     ...(installation === undefined ? {} : { installation }),
+    ...(agentRuntime === "earendil" || agentRuntime === "omp" ? { agentRuntime } : {}),
     ...(typeof error === "string" ? { error } : {}),
   };
 }

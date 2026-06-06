@@ -1,28 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { getLoginProviderOptions, getLogoutProviderOptions, isApiKeyLoginProvider, type AuthProviderModelRegistry } from "./authProviderOptions";
+import { getLoginProviderOptions, getLogoutProviderOptions, isApiKeyLoginProvider, type AuthProviderCatalog } from "./authProviderOptions";
 
-function registry(): AuthProviderModelRegistry {
-  const credentials = new Map<string, { type: "oauth" | "api_key" }>();
-  credentials.set("openai", { type: "api_key" });
+function catalog(): AuthProviderCatalog {
   return {
-    authStorage: {
-      getOAuthProviders: () => [
-        { id: "anthropic", name: "Anthropic (Claude Pro/Max)" },
-        { id: "github-copilot", name: "GitHub Copilot" },
-        { id: "openai-codex", name: "ChatGPT Plus/Pro (Codex Subscription)" },
-      ],
-      list: () => Array.from(credentials.keys()),
-      get: (provider: string) => credentials.get(provider),
-    },
-    getAll: () => [
-      { provider: "anthropic" },
-      { provider: "openai" },
-      { provider: "openai-codex" },
-      { provider: "github-copilot" },
-      { provider: "custom" },
+    oauthProviders: [
+      { id: "anthropic", name: "Anthropic (Claude Pro/Max)" },
+      { id: "github-copilot", name: "GitHub Copilot" },
+      { id: "openai-codex", name: "ChatGPT Plus/Pro (Codex Subscription)" },
     ],
-    getProviderDisplayName: (provider: string) => ({ anthropic: "Anthropic", openai: "OpenAI", custom: "Custom" }[provider] ?? provider),
-    getProviderAuthStatus: (provider: string) => (provider === "openai" ? { configured: true, source: "stored" } : { configured: false }),
+    modelProviders: ["anthropic", "openai", "openai-codex", "github-copilot", "custom"],
+    storedCredentials: [{ id: "openai", credential: { type: "api_key" } }],
+    displayName: (provider: string) => ({ anthropic: "Anthropic", openai: "OpenAI", custom: "Custom" }[provider] ?? provider),
+    authStatus: (provider: string) => (provider === "openai" ? { configured: true, source: "stored" } : { configured: false }),
   };
 }
 
@@ -34,7 +23,7 @@ describe("auth provider options", () => {
   });
 
   it("includes Anthropic in both OAuth and API key login options", () => {
-    const options = getLoginProviderOptions(registry());
+    const options = getLoginProviderOptions(catalog());
     expect(options).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "anthropic", authType: "oauth" }),
       expect.objectContaining({ id: "anthropic", authType: "api_key" }),
@@ -45,7 +34,7 @@ describe("auth provider options", () => {
   });
 
   it("returns only stored credentials for logout", () => {
-    expect(getLogoutProviderOptions(registry())).toEqual([
+    expect(getLogoutProviderOptions(catalog())).toEqual([
       expect.objectContaining({ id: "openai", authType: "api_key" }),
     ]);
   });

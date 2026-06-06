@@ -29,7 +29,7 @@ const auth = new AuthService(sessionProvider === undefined ? {} : { modelRegistr
 const sessions = new PiSessionService(eventHub, sessionProvider === undefined
   ? { modelRegistry: auth.modelRegistry, workspaceActivity }
   : { provider: sessionProvider, workspaceActivity });
-auth.subscribe((change) => { sessions.applyAuthChange(change); });
+auth.subscribe((change) => { void sessions.applyAuthChange(change); });
 const terminals = new TerminalService(eventHub, workspaceActivity);
 registerWorkspaceActivityRoutes(app, workspaceActivity);
 registerAuthRoutes(app, auth);

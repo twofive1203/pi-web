@@ -3,30 +3,30 @@ import { describe, expect, it } from "vitest";
 import { AuthService, type AuthChange } from "./authService.js";
 
 describe("AuthService", () => {
-  it("saves API keys and emits a global auth change", () => {
+  it("saves API keys and emits a global auth change", async () => {
     const { auth, authStorage, changes } = createAuthService();
 
-    expect(auth.saveApiKey("anthropic", "sk-test")).toEqual({ accepted: true });
+    await expect(auth.saveApiKey("anthropic", "sk-test")).resolves.toEqual({ accepted: true });
 
     expect(authStorage.get("anthropic")).toEqual({ type: "api_key", key: "sk-test" });
     expect(changes).toEqual([{}]);
     auth.dispose();
   });
 
-  it("logs out providers and emits the removed provider id", () => {
+  it("logs out providers and emits the removed provider id", async () => {
     const { auth, authStorage, changes } = createAuthService({ anthropic: { type: "api_key", key: "sk-test" } });
 
-    expect(auth.logoutProvider("anthropic")).toEqual({ accepted: true });
+    await expect(auth.logoutProvider("anthropic")).resolves.toEqual({ accepted: true });
 
     expect(authStorage.get("anthropic")).toBeUndefined();
     expect(changes).toEqual([{ removedProviderId: "anthropic" }]);
     auth.dispose();
   });
 
-  it("rejects blank API keys", () => {
+  it("rejects blank API keys", async () => {
     const { auth, changes } = createAuthService();
 
-    expect(() => { auth.saveApiKey("anthropic", "   "); }).toThrow("API key is required");
+    await expect(auth.saveApiKey("anthropic", "   ")).rejects.toThrow("API key is required");
     expect(changes).toEqual([]);
     auth.dispose();
   });

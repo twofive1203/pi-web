@@ -12,6 +12,7 @@
   },
   "files": [
     "dist",
+    "scripts",
     "install.sh",
     "README.md",
     "LICENSE",
@@ -24,6 +25,7 @@
   "scripts": {
     "dev": "bash -c 'trap \"kill 0\" EXIT; npm run dev:sessiond & npm run dev:web & npm run dev:client & wait'",
     "dev:omp": "bash -c 'trap \"kill 0\" EXIT; npm run dev:sessiond:omp & npm run dev:web:omp & npm run dev:client & wait'",
+    "dev:windows": "cmd /c scripts\\\\start-windows.cmd",
     "dev:sessiond": "tsx watch src/server/sessiond.ts",
     "dev:sessiond:omp": "bun --watch scripts/start-omp-sessiond.mjs",
     "dev:web": "bash -c 'set -e; npm run build:plugins; trap \"kill 0\" EXIT; npm run dev:plugins & tsx watch src/server/index.ts & wait'",

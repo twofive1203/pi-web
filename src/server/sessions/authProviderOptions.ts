@@ -1,64 +1,59 @@
-import { getProviders } from "@earendil-works/pi-ai";
 import type { AuthProviderOption, AuthProviderStatus, AuthType } from "../../shared/apiTypes.js";
 
 const OAUTH_ONLY_PROVIDERS = new Set(["github-copilot", "openai-codex"]);
-const BUILT_IN_MODEL_PROVIDERS = new Set(getProviders());
 
-export interface AuthProviderModelRegistry {
-  authStorage: {
-    getOAuthProviders(): { id: string; name: string }[];
-    list(): string[];
-    get(provider: string): { type: AuthType } | undefined;
-  };
-  getAll(): { provider: string }[];
-  getProviderDisplayName(provider: string): string;
-  getProviderAuthStatus(provider: string): AuthProviderStatus;
+export interface AuthProviderCredential {
+  type: AuthType;
 }
 
-export function getLoginProviderOptions(modelRegistry: AuthProviderModelRegistry, authType?: AuthType): AuthProviderOption[] {
-  const oauthProviders = modelRegistry.authStorage.getOAuthProviders();
-  const oauthProviderIds = new Set(oauthProviders.map((provider) => provider.id));
-  const options: AuthProviderOption[] = oauthProviders.map((provider) => ({
+export interface AuthProviderCatalog {
+  oauthProviders: readonly { id: string; name: string }[];
+  modelProviders: readonly string[];
+  storedCredentials: readonly { id: string; credential: AuthProviderCredential }[];
+  displayName(providerId: string): string;
+  authStatus(providerId: string): AuthProviderStatus;
+}
+
+export function getLoginProviderOptions(catalog: AuthProviderCatalog, authType?: AuthType): AuthProviderOption[] {
+  const oauthProviderIds = new Set(catalog.oauthProviders.map((provider) => provider.id));
+  const options: AuthProviderOption[] = catalog.oauthProviders.map((provider) => ({
     id: provider.id,
     name: provider.name,
     authType: "oauth",
-    status: modelRegistry.getProviderAuthStatus(provider.id),
+    status: catalog.authStatus(provider.id),
   }));
 
-  const modelProviders = new Set(modelRegistry.getAll().map((model) => model.provider));
+  const modelProviders = new Set(catalog.modelProviders);
   for (const providerId of modelProviders) {
     if (!isApiKeyLoginProvider(providerId, oauthProviderIds)) continue;
     options.push({
       id: providerId,
-      name: modelRegistry.getProviderDisplayName(providerId),
+      name: catalog.displayName(providerId),
       authType: "api_key",
-      status: modelRegistry.getProviderAuthStatus(providerId),
+      status: catalog.authStatus(providerId),
     });
   }
 
   return filterAndSort(options, authType);
 }
 
-export function getLogoutProviderOptions(modelRegistry: AuthProviderModelRegistry): AuthProviderOption[] {
+export function getLogoutProviderOptions(catalog: AuthProviderCatalog): AuthProviderOption[] {
   const options: AuthProviderOption[] = [];
-  for (const providerId of modelRegistry.authStorage.list()) {
-    const credential = modelRegistry.authStorage.get(providerId);
-    if (credential === undefined) continue;
+  for (const stored of catalog.storedCredentials) {
     options.push({
-      id: providerId,
-      name: modelRegistry.getProviderDisplayName(providerId),
-      authType: credential.type,
-      status: modelRegistry.getProviderAuthStatus(providerId),
+      id: stored.id,
+      name: catalog.displayName(stored.id),
+      authType: stored.credential.type,
+      status: catalog.authStatus(stored.id),
     });
   }
   return filterAndSort(options);
 }
 
-export function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>, builtInProviderIds: ReadonlySet<string> = BUILT_IN_MODEL_PROVIDERS): boolean {
+export function isApiKeyLoginProvider(providerId: string, oauthProviderIds: ReadonlySet<string>): boolean {
   if (OAUTH_ONLY_PROVIDERS.has(providerId)) return false;
   if (providerId === "anthropic") return true;
   if (oauthProviderIds.has(providerId)) return false;
-  if (builtInProviderIds.has(providerId)) return true;
   return true;
 }
 
