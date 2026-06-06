@@ -85,7 +85,7 @@ export class TerminalService {
         name: options.title,
         ...(options.cols === undefined ? {} : { cols: options.cols }),
         ...(options.rows === undefined ? {} : { rows: options.rows }),
-        shellArgs: ["-lc", commandRunShellScript(options.command)],
+        shellArgs: commandRunShellArgs(options.command),
         commandRunId,
       });
     } catch (error) {
@@ -157,7 +157,7 @@ export class TerminalService {
     const marker = "\r\n[continued in interactive shell]\r\n";
     record.buffer = trimReplayBuffer(record.buffer + marker);
     record.events.emit("output", marker);
-    const shell = process.env["SHELL"] ?? "/bin/bash";
+    const shell = resolveTerminalShell();
     record.pty = pty.spawn(shell, [], {
       name: "xterm-256color",
       cwd: record.cwd,
@@ -190,7 +190,7 @@ export class TerminalService {
     if (options.cwd === "") throw new Error("cwd is required");
     const id = options.id ?? randomUUID();
     const createdAt = new Date().toISOString();
-    const shell = process.env["SHELL"] ?? "/bin/bash";
+    const shell = resolveTerminalShell();
     const terminal = pty.spawn(shell, options.shellArgs, {
       name: "xterm-256color",
       cwd: options.cwd,
@@ -275,8 +275,33 @@ function trimReplayBuffer(buffer: string): string {
   return buffer.slice(buffer.length - MAX_REPLAY_BUFFER);
 }
 
-function commandRunShellScript(command: string): string {
+function commandRunShellArgs(command: string): string[] {
+  return usesCmdShell() ? ["/d", "/s", "/c", commandRunCmdScript(command)] : ["-lc", commandRunBashScript(command)];
+}
+
+function commandRunBashScript(command: string): string {
   return `printf '%s\\n' ${shellQuote(`$ ${command}`)}\n${command}`;
+}
+
+function commandRunCmdScript(command: string): string {
+  return `echo $ ${cmdEcho(command)} & ${command}`;
+}
+
+function resolveTerminalShell(): string {
+  const configured = process.env["SHELL"]?.trim();
+  if (configured !== undefined && configured !== "") return configured;
+  if (process.platform !== "win32") return "/bin/bash";
+  const comspec = process.env["COMSPEC"]?.trim();
+  return comspec !== undefined && comspec !== "" ? comspec : "cmd.exe";
+}
+
+function usesCmdShell(): boolean {
+  const configured = process.env["SHELL"]?.trim();
+  return (configured === undefined || configured === "") && process.platform === "win32";
+}
+
+function cmdEcho(value: string): string {
+  return value.replaceAll("^", "^^").replaceAll("&", "^&").replaceAll("|", "^|").replaceAll("<", "^<").replaceAll(">", "^>");
 }
 
 function shellQuote(value: string): string {

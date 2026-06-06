@@ -9,6 +9,7 @@ import { SessionEventHub } from "./realtime/sessionEventHub.js";
 import { AuthService } from "./sessions/authService.js";
 import { registerAuthRoutes } from "./sessions/authRoutes.js";
 import { PiSessionService } from "./sessions/piSessionService.js";
+import { createOmpSessionProvider } from "./sessions/ompSessionProvider.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { sessiondSocketPath } from "../sessiond/config.js";
 import { TerminalService } from "./terminals/terminalService.js";
@@ -20,8 +21,14 @@ await app.register(fastifyWebsocket);
 
 const eventHub = new SessionEventHub();
 const workspaceActivity = new WorkspaceActivityService(eventHub);
-const auth = new AuthService();
-const sessions = new PiSessionService(eventHub, { modelRegistry: auth.modelRegistry, workspaceActivity });
+const ompAgentDir = process.env["PI_WEB_OMP_AGENT_DIR"];
+const sessionProvider = process.env["PI_WEB_AGENT_RUNTIME"] === "omp"
+  ? await createOmpSessionProvider(ompAgentDir === undefined || ompAgentDir === "" ? {} : { agentDir: ompAgentDir })
+  : undefined;
+const auth = new AuthService(sessionProvider === undefined ? {} : { modelRegistry: sessionProvider.modelRegistry });
+const sessions = new PiSessionService(eventHub, sessionProvider === undefined
+  ? { modelRegistry: auth.modelRegistry, workspaceActivity }
+  : { provider: sessionProvider, workspaceActivity });
 auth.subscribe((change) => { sessions.applyAuthChange(change); });
 const terminals = new TerminalService(eventHub, workspaceActivity);
 registerWorkspaceActivityRoutes(app, workspaceActivity);

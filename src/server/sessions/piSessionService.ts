@@ -84,9 +84,9 @@ export interface PiSessionManager {
 
 export interface PiSessionManagerGateway {
   list(cwd: string): Promise<PiSessionListEntry[]>;
-  create(cwd: string): PiSessionManager;
+  create(cwd: string): PiSessionManager | Promise<PiSessionManager>;
   listAll(): Promise<PiSessionListEntry[]>;
-  open(path: string): PiSessionManager;
+  open(path: string): PiSessionManager | Promise<PiSessionManager>;
 }
 
 export interface PiAgentSession {
@@ -133,13 +133,20 @@ export interface PiSessionRuntime {
   dispose(): Promise<void>;
 }
 
-interface CreateAgentRuntimeOptions {
+export interface CreateAgentRuntimeOptions {
   cwd: string;
   agentDir: string;
   sessionManager: PiSessionManager;
 }
 
-type CreateAgentRuntime = (createRuntime: CreateAgentSessionRuntimeFactory, options: CreateAgentRuntimeOptions) => Promise<PiSessionRuntime>;
+export type CreateAgentRuntime = (createRuntime: CreateAgentSessionRuntimeFactory, options: CreateAgentRuntimeOptions) => Promise<PiSessionRuntime>;
+
+export interface PiSessionProvider {
+  readonly agentDir: string;
+  readonly modelRegistry: ModelRegistryInstance;
+  readonly sessionManager: PiSessionManagerGateway;
+  createAgentRuntime(options: CreateAgentRuntimeOptions): Promise<PiSessionRuntime>;
+}
 
 function defaultCreateAgentRuntime(createRuntime: CreateAgentSessionRuntimeFactory, options: CreateAgentRuntimeOptions): Promise<PiSessionRuntime> {
   if (!(options.sessionManager instanceof SessionManager)) throw new Error("Default runtime creation requires an SDK SessionManager");
@@ -189,6 +196,7 @@ export interface PiSessionServiceDependencies {
   createRuntime?: CreateAgentSessionRuntimeFactory;
   createAgentRuntime?: CreateAgentRuntime;
   modelRegistry?: ModelRegistryInstance;
+  provider?: PiSessionProvider;
   heartbeatIntervalMs?: number;
   workspaceActivity?: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity">;
 }
@@ -210,12 +218,13 @@ export class PiSessionService {
   private readonly workspaceActivity: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity"> | undefined;
 
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies = {}) {
+    const provider = deps.provider;
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
-    this.agentDir = deps.agentDir ?? getAgentDir();
-    this.sessionManager = deps.sessionManager ?? SessionManager;
-    this.modelRegistry = deps.modelRegistry ?? ModelRegistry.create(AuthStorage.create());
+    this.agentDir = deps.agentDir ?? provider?.agentDir ?? getAgentDir();
+    this.sessionManager = deps.sessionManager ?? provider?.sessionManager ?? SessionManager;
+    this.modelRegistry = deps.modelRegistry ?? provider?.modelRegistry ?? ModelRegistry.create(AuthStorage.create());
     this.createRuntime = deps.createRuntime ?? createDefaultRuntimeFactory(this.modelRegistry.authStorage, this.modelRegistry);
-    this.createAgentRuntime = deps.createAgentRuntime ?? defaultCreateAgentRuntime;
+    this.createAgentRuntime = deps.createAgentRuntime ?? (provider === undefined ? defaultCreateAgentRuntime : (_createRuntime, options) => provider.createAgentRuntime(options));
     this.workspaceActivity = deps.workspaceActivity;
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
     this.commandService = new SessionCommandService(
@@ -275,7 +284,7 @@ export class PiSessionService {
   }
 
   async start(cwd: string): Promise<ClientSession> {
-    const active = await this.create(this.sessionManager.create(cwd), cwd);
+    const active = await this.create(await this.sessionManager.create(cwd), cwd);
     const { session } = active.runtime;
     return {
       id: session.sessionId,
@@ -617,11 +626,11 @@ export class PiSessionService {
     if (active) return active;
 
     const archived = await this.archiveStore.get(sessionId);
-    if (archived?.archivePath !== undefined) return this.create(this.sessionManager.open(archived.archivePath), archived.cwd);
+    if (archived?.archivePath !== undefined) return this.create(await this.sessionManager.open(archived.archivePath), archived.cwd);
 
     const match = (await this.sessionManager.listAll()).find((s) => s.id === sessionId || s.id.startsWith(sessionId));
     if (!match) throw new Error("Session not found");
-    return this.create(this.sessionManager.open(match.path), match.cwd);
+    return this.create(await this.sessionManager.open(match.path), match.cwd);
   }
 
   private async create(sessionManager: PiSessionManager, cwd: string): Promise<ActiveSession<PiSessionRuntime>> {

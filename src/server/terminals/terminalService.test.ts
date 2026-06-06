@@ -25,7 +25,7 @@ describe("TerminalService command runs", () => {
         workspaceId: "w1",
         cwd: process.cwd(),
         title: "Test command",
-        command: "printf 'hello'",
+        command: "echo hello",
         metadata: { "pi.operation": "test" },
       });
 
@@ -35,7 +35,7 @@ describe("TerminalService command runs", () => {
 
       const output = await terminalExit(service, run.terminalId);
 
-      expect(output).toContain("$ printf 'hello'");
+      expect(output).toContain("$ echo hello");
       expect(output).toContain("hello");
       expect(service.getCommandRun(run.id)).toMatchObject({ status: "succeeded", exitCode: 0, terminalId: run.terminalId });
       expect(service.listCommandRuns({ statuses: ["succeeded"] }).map((candidate) => candidate.id)).toEqual([run.id]);
@@ -53,7 +53,7 @@ describe("TerminalService command runs", () => {
         workspaceId: "w1",
         cwd: process.cwd(),
         title: "Done command",
-        command: "true",
+        command: "exit 0",
       });
       await terminalExit(service, run.terminalId);
 

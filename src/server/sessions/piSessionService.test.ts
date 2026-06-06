@@ -2,7 +2,7 @@ import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSessionEvent, SessionUiEvent } from "../../shared/apiTypes.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
-import { PiSessionService, type PiAgentSession, type PiSessionManager, type PiSessionRuntime, type PiSessionServiceDependencies } from "./piSessionService.js";
+import { PiSessionService, type PiAgentSession, type PiSessionManager, type PiSessionProvider, type PiSessionRuntime, type PiSessionServiceDependencies } from "./piSessionService.js";
 
 class CapturingSessionEventHub extends SessionEventHub {
   readonly sessionEvents: { sessionId: string; event: SessionUiEvent }[] = [];
@@ -153,6 +153,41 @@ describe("PiSessionService", () => {
     await service.dispose();
     expect(fake.calls.abort).toBe(1);
     expect(fake.calls.dispose).toBe(1);
+  });
+
+  it("starts sessions through an injected provider", async () => {
+    const hub = new CapturingSessionEventHub();
+    const fake = fakeRuntime("provider-session");
+    const sessionManager = fakeSessionManager();
+    let createCalls = 0;
+    const provider: PiSessionProvider = {
+      agentDir: "/omp-agent",
+      modelRegistry: ModelRegistry.create(AuthStorage.inMemory()),
+      sessionManager: {
+        create: () => sessionManager,
+        list: () => Promise.resolve([]),
+        listAll: () => Promise.resolve([]),
+        open: () => sessionManager,
+      },
+      createAgentRuntime: (options) => {
+        createCalls += 1;
+        expect(options.agentDir).toBe("/omp-agent");
+        expect(options.sessionManager).toBe(sessionManager);
+        return Promise.resolve(fake.runtime);
+      },
+    };
+    const service = new PiSessionService(hub, {
+      provider,
+      heartbeatIntervalMs: 60_000,
+    });
+
+    const session = await service.start("/workspace");
+
+    expect(createCalls).toBe(1);
+    expect(session).toMatchObject({ id: "provider-session", cwd: "/workspace" });
+    expect(service.activeCount()).toBe(1);
+
+    await service.dispose();
   });
 
   it("clears stale active activity once a previously active session becomes idle", async () => {
