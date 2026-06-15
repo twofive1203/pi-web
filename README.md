@@ -292,7 +292,7 @@ Environment variables:
 - `PI_WEB_SESSIOND_PORT` — optional TCP port for the daemon. If unset, the daemon listens on the Unix socket instead.
 - `PI_WEB_SESSIOND_HOST` — daemon TCP bind host when `PI_WEB_SESSIOND_PORT` is set. Defaults to `127.0.0.1`.
 - `PI_WEB_SESSIOND_URL` — daemon URL used by the web process when connecting over TCP, for example `http://127.0.0.1:3001`. If you set `PI_WEB_SESSIOND_PORT`, set this for the web process too.
-- `PI_WEB_AGENT_RUNTIME` — agent runtime selector. Set to `omp` for OMP; unset uses the Earendil runtime.
+- `PI_WEB_AGENT_RUNTIME` — agent runtime selector. Defaults to OMP when unset; set it to `earendil` for the legacy runtime.
 - `PI_WEB_OMP_AGENT_DIR` — optional OMP agent directory override for sessiond and plugin discovery.
 - `PI_WEB_PROJECTS_FILE` — optional override for the projects storage JSON file. Defaults to `$PI_WEB_DATA_DIR/projects.json`.
 - `PI_WEB_MACHINES_FILE` — optional override for the remote machine registry JSON file. Defaults to `$PI_WEB_DATA_DIR/machines.json`.

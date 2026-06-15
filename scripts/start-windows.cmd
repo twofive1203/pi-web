@@ -29,11 +29,12 @@ echo Vite UI:        see the pi-web UI window output
 echo.
 
 start "pi-web sessiond OMP" "%COMSPEC%" /k ""%~f0" sessiond"
+call :wait_for_url "http://127.0.0.1:8704/health" "session daemon" 60 || exit /b %ERRORLEVEL%
 start "pi-web web API OMP" "%COMSPEC%" /k ""%~f0" web"
 start "pi-web Vite UI" "%COMSPEC%" /k ""%~f0" client"
 start "pi-web plugin watcher" "%COMSPEC%" /k ""%~f0" plugins"
 
-echo Started 4 windows. Close those windows or press Ctrl+C inside each one to stop.
+echo Started 4 windows after sessiond became healthy. Close those windows or press Ctrl+C inside each one to stop.
 exit /b 0
 
 :sessiond
@@ -46,7 +47,7 @@ exit /b %ERRORLEVEL%
 :web
 cd /d "%ROOT%" || exit /b 1
 set "PI_WEB_SESSIOND_URL=http://127.0.0.1:8704"
-call npx tsx watch scripts/start-omp-web.mjs
+call npm run dev:web:server:omp
 exit /b %ERRORLEVEL%
 
 :client
@@ -58,6 +59,28 @@ exit /b %ERRORLEVEL%
 cd /d "%ROOT%" || exit /b 1
 call npm run dev:plugins
 exit /b %ERRORLEVEL%
+
+:wait_for_url
+setlocal
+set "WAIT_URL=%~1"
+set "WAIT_LABEL=%~2"
+set "WAIT_LIMIT=%~3"
+if "%WAIT_LIMIT%"=="" set "WAIT_LIMIT=60"
+set /a WAIT_COUNT=0
+echo Waiting for %WAIT_LABEL% at %WAIT_URL% ...
+:wait_for_url_loop
+curl.exe --silent --fail "%WAIT_URL%" >nul 2>nul
+if not errorlevel 1 (
+  echo %WAIT_LABEL% is ready.
+  endlocal & exit /b 0
+)
+set /a WAIT_COUNT+=1
+if %WAIT_COUNT% geq %WAIT_LIMIT% (
+  echo Timed out waiting for %WAIT_LABEL% at %WAIT_URL%.
+  endlocal & exit /b 1
+)
+timeout /t 1 /nobreak >nul
+goto wait_for_url_loop
 
 :help
 echo Usage:
