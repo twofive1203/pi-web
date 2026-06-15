@@ -39,7 +39,20 @@ function fakeSessionManager(cwd = "/workspace"): PiSessionManager {
   };
 }
 
-function sessionRecord(id: string, cwd = "/workspace") {
+interface TestSessionRecord {
+  id: string;
+  path: string;
+  cwd: string;
+  created: Date;
+  modified: Date;
+  messageCount: number;
+  firstMessage: string;
+  allMessagesText: string;
+  name?: string;
+  parentSessionPath?: string;
+}
+
+function sessionRecord(id: string, cwd = "/workspace"): TestSessionRecord {
   return { id, path: `/sessions/${id}.jsonl`, cwd, created: new Date("2026-01-01T00:00:00.000Z"), modified: new Date("2026-01-01T00:01:00.000Z"), messageCount: 0, firstMessage: "", allMessagesText: "" };
 }
 
@@ -118,7 +131,7 @@ function runtimeCreator(runtime: PiSessionRuntime): RuntimeCreator {
   };
 }
 
-function sessionGateway(records: ReturnType<typeof sessionRecord>[]): SessionGateway {
+function sessionGateway(records: TestSessionRecord[]): SessionGateway {
   return {
     create: () => fakeSessionManager(),
     list: () => Promise.resolve(records),

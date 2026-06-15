@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
 import { terminalsApi, workspacesApi } from "./clients";
 
@@ -93,7 +93,7 @@ describe("machine-scoped terminal command-run API", () => {
 });
 
 type FetchLike = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
-type FetchMock = ReturnType<typeof vi.fn<FetchLike>>;
+type FetchMock = Mock<FetchLike>;
 
 function stubJsonFetch(value: unknown): FetchMock {
   return stubResponseFetch(jsonResponse(value));

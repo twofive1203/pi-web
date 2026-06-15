@@ -1,4 +1,3 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AuthProviderOption, AuthProvidersResponse, AuthProviderStatus, AuthType, OAuthFlowState } from "../../shared/apiTypes.js";
 import { getLoginProviderOptions, getLogoutProviderOptions, type AuthProviderCatalog, type AuthProviderCredential } from "./authProviderOptions.js";
 import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
@@ -9,7 +8,7 @@ export interface AuthChange {
 
 type AuthChangeListener = (change: AuthChange) => void;
 
-type ModelRegistryInstance = ReturnType<typeof ModelRegistry.create>;
+export type AuthModelRegistry = AuthModelRegistryLike;
 type MaybePromise<T> = T | Promise<T>;
 
 interface AuthStorageLike {
@@ -36,18 +35,19 @@ interface AuthModelRegistryLike {
 }
 
 export interface AuthServiceDependencies {
-  modelRegistry?: ModelRegistryInstance;
+  modelRegistry?: AuthModelRegistry;
   authFlows?: OAuthLoginFlowService;
 }
 
 export class AuthService {
-  readonly modelRegistry: ModelRegistryInstance;
+  readonly modelRegistry: AuthModelRegistry;
   private readonly authRegistry: AuthModelRegistryLike;
   private readonly authFlows: OAuthLoginFlowService;
   private readonly listeners = new Set<AuthChangeListener>();
 
-  constructor(deps: AuthServiceDependencies = {}) {
-    const modelRegistry = deps.modelRegistry ?? ModelRegistry.create(AuthStorage.create());
+  constructor(deps: AuthServiceDependencies) {
+    if (deps.modelRegistry === undefined) throw new Error("AuthService requires a runtime model registry");
+    const modelRegistry = deps.modelRegistry;
     this.modelRegistry = modelRegistry;
     this.authRegistry = modelRegistry;
     this.authFlows = deps.authFlows ?? new OAuthLoginFlowService();

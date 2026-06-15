@@ -24,11 +24,9 @@ const workspaceActivity = new WorkspaceActivityService(eventHub);
 const ompAgentDir = process.env["PI_WEB_OMP_AGENT_DIR"];
 const sessionProvider = process.env["PI_WEB_AGENT_RUNTIME"] === "omp"
   ? await createOmpSessionProvider(ompAgentDir === undefined || ompAgentDir === "" ? {} : { agentDir: ompAgentDir })
-  : undefined;
-const auth = new AuthService(sessionProvider === undefined ? {} : { modelRegistry: sessionProvider.modelRegistry });
-const sessions = new PiSessionService(eventHub, sessionProvider === undefined
-  ? { modelRegistry: auth.modelRegistry, workspaceActivity }
-  : { provider: sessionProvider, workspaceActivity });
+  : (await import("./sessions/earendilSessionProvider.js")).createEarendilSessionProvider();
+const auth = new AuthService({ modelRegistry: sessionProvider.modelRegistry });
+const sessions = new PiSessionService(eventHub, { provider: sessionProvider, workspaceActivity });
 auth.subscribe((change) => { void sessions.applyAuthChange(change); });
 const terminals = new TerminalService(eventHub, workspaceActivity);
 registerWorkspaceActivityRoutes(app, workspaceActivity);

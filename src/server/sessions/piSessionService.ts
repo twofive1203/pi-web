@@ -1,18 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
-import type { Api, Model } from "@earendil-works/pi-ai";
-import {
-  AuthStorage,
-  createAgentSessionFromServices,
-  createAgentSessionRuntime,
-  createAgentSessionServices,
-  createEditToolDefinition,
-  defineTool,
-  getAgentDir,
-  ModelRegistry,
-  SessionManager,
-  type CreateAgentSessionRuntimeFactory,
-  type EditToolDetails,
-} from "@earendil-works/pi-coding-agent";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { CreateAgentSessionRuntimeFactory } from "@earendil-works/pi-coding-agent";
 import type { ClientArchiveSessionsResponse, ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionStatus, ClientThinkingLevel, SessionUiEvent } from "../types.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
@@ -23,7 +12,6 @@ import { findArchiveCandidateByIdOrPrefix, planSessionArchiveTree, type SessionA
 import type { ActiveSession } from "./sessionRuntimeStore.js";
 import type { AuthChange } from "./authService.js";
 import { fallbackSessionName, generateShortSessionName } from "./sessionNameGenerator.js";
-import { computeEditPreview, type EditPreviewResult } from "./editPreview.js";
 import type { WorkspaceActivityService } from "../activity/workspaceActivityService.js";
 
 function noop(): void {
@@ -72,8 +60,34 @@ interface WorkspaceArchiveCandidate extends SessionArchiveTreeCandidate {
   activeSession?: PiAgentSession;
 }
 
-type AgentModel = Model<Api>;
-type ModelRegistryInstance = ReturnType<typeof ModelRegistry.create>;
+export interface AgentModel {
+  provider: string;
+  id: string;
+  api?: string;
+  name?: string;
+  contextWindow?: number;
+  reasoning?: unknown;
+}
+
+export interface PiAuthStorage {
+  get(provider: string): { type: "api_key" | "oauth"; [key: string]: unknown } | { type: "api_key" | "oauth"; [key: string]: unknown }[] | undefined;
+  set(provider: string, credential: unknown): void | Promise<void>;
+  login(providerId: string, callbacks: unknown): Promise<void>;
+  logout(provider: string): void | Promise<void>;
+  reload(): void | Promise<void>;
+  list(): string[];
+  hasAuth?(provider: string): boolean;
+  getAuthStatus?(provider: string): { configured: boolean; source?: "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command"; label?: string };
+  getOAuthProviders?(): { id: string; name: string }[];
+}
+export interface PiModelRegistry {
+  authStorage: PiAuthStorage;
+  refresh(): void | Promise<void>;
+  getAll(): AgentModel[];
+  getAvailable(): AgentModel[];
+  find(provider: string, modelId: string): AgentModel | undefined;
+  hasConfiguredAuth(model: AgentModel): boolean;
+}
 
 export interface PiSessionManager {
   getCwd(): string;
@@ -90,7 +104,7 @@ export interface PiSessionManagerGateway {
 }
 
 export interface PiAgentSession {
-  modelRegistry: ModelRegistryInstance;
+  modelRegistry: PiModelRegistry;
   sessionManager: PiSessionManager;
   scopedModels: readonly { model: AgentModel; thinkingLevel?: ClientThinkingLevel }[];
   sessionId: string;
@@ -143,59 +157,62 @@ export type CreateAgentRuntime = (createRuntime: CreateAgentSessionRuntimeFactor
 
 export interface PiSessionProvider {
   readonly agentDir: string;
-  readonly modelRegistry: ModelRegistryInstance;
+  readonly modelRegistry: PiModelRegistry;
   readonly sessionManager: PiSessionManagerGateway;
   createAgentRuntime(options: CreateAgentRuntimeOptions): Promise<PiSessionRuntime>;
 }
 
-function defaultCreateAgentRuntime(createRuntime: CreateAgentSessionRuntimeFactory, options: CreateAgentRuntimeOptions): Promise<PiSessionRuntime> {
-  if (!(options.sessionManager instanceof SessionManager)) throw new Error("Default runtime creation requires an SDK SessionManager");
-  return createAgentSessionRuntime(createRuntime, { ...options, sessionManager: options.sessionManager });
+
+function defaultEarendilAgentDir(): string {
+  const configured = process.env["PI_CODING_AGENT_DIR"];
+  return configured === undefined || configured === "" ? join(homedir(), ".pi", "agent") : configured;
 }
 
-function createDefaultRuntimeFactory(authStorage: AuthStorage, modelRegistry: ModelRegistryInstance): CreateAgentSessionRuntimeFactory {
-  return async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
-    const services = await createAgentSessionServices({ cwd, agentDir, authStorage, modelRegistry });
-    const customTools = [createPiWebEditToolDefinition(cwd)];
-    const options = sessionStartEvent === undefined
-      ? { services, sessionManager, customTools }
-      : { services, sessionManager, sessionStartEvent, customTools };
-    const result = await createAgentSessionFromServices(options);
-    return { ...result, services, diagnostics: services.diagnostics };
+function emptyAuthStorage(): PiAuthStorage {
+  return {
+    get: () => undefined,
+    set: () => undefined,
+    login: () => Promise.reject(new Error("PiSessionService requires a session runtime provider for OAuth login")),
+    logout: () => undefined,
+    reload: () => undefined,
+    list: () => [],
   };
 }
 
-type PiWebEditToolDetails = EditToolDetails | { preview: EditPreviewResult } | undefined;
-
-function createPiWebEditToolDefinition(cwd: string) {
-  const editTool = createEditToolDefinition(cwd);
-  return defineTool<typeof editTool.parameters, PiWebEditToolDetails>({
-    name: editTool.name,
-    label: editTool.label,
-    description: editTool.description,
-    ...(editTool.promptSnippet === undefined ? {} : { promptSnippet: editTool.promptSnippet }),
-    ...(editTool.promptGuidelines === undefined ? {} : { promptGuidelines: editTool.promptGuidelines }),
-    parameters: editTool.parameters,
-    ...(editTool.renderShell === undefined ? {} : { renderShell: editTool.renderShell }),
-    ...(editTool.prepareArguments === undefined ? {} : { prepareArguments: editTool.prepareArguments }),
-    ...(editTool.executionMode === undefined ? {} : { executionMode: editTool.executionMode }),
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const preview = await computeEditPreview(params.path, params.edits, cwd);
-      if (signal?.aborted !== true) {
-        onUpdate?.({ content: [{ type: "text", text: "Edit preview computed." }], details: { preview } });
-      }
-      return editTool.execute(toolCallId, params, signal, onUpdate, ctx);
-    },
-  });
+function emptyModelRegistry(): PiModelRegistry {
+  return {
+    authStorage: emptyAuthStorage(),
+    refresh: () => undefined,
+    getAll: () => [],
+    getAvailable: () => [],
+    find: () => undefined,
+    hasConfiguredAuth: () => false,
+  };
 }
 
+function emptySessionManagerGateway(): PiSessionManagerGateway {
+  return {
+    list: () => Promise.resolve([]),
+    create: () => { throw new Error("PiSessionService requires a session runtime provider to create sessions"); },
+    listAll: () => Promise.resolve([]),
+    open: () => { throw new Error("PiSessionService requires a session runtime provider to open sessions"); },
+  };
+}
+
+const unconfiguredRuntimeFactory: CreateAgentSessionRuntimeFactory = () => {
+  throw new Error("PiSessionService requires a session runtime provider");
+};
+
+const unconfiguredCreateAgentRuntime: CreateAgentRuntime = () => {
+  throw new Error("PiSessionService requires a session runtime provider");
+};
 export interface PiSessionServiceDependencies {
   archiveStore?: SessionArchiveRepository;
   agentDir?: string;
   sessionManager?: PiSessionManagerGateway;
   createRuntime?: CreateAgentSessionRuntimeFactory;
   createAgentRuntime?: CreateAgentRuntime;
-  modelRegistry?: ModelRegistryInstance;
+  modelRegistry?: PiModelRegistry;
   provider?: PiSessionProvider;
   heartbeatIntervalMs?: number;
   workspaceActivity?: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity">;
@@ -214,17 +231,17 @@ export class PiSessionService {
   private readonly sessionManager: PiSessionManagerGateway;
   private readonly createRuntime: CreateAgentSessionRuntimeFactory;
   private readonly createAgentRuntime: CreateAgentRuntime;
-  private readonly modelRegistry: ModelRegistryInstance;
+  private readonly modelRegistry: PiModelRegistry;
   private readonly workspaceActivity: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity"> | undefined;
 
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies = {}) {
     const provider = deps.provider;
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
-    this.agentDir = deps.agentDir ?? provider?.agentDir ?? getAgentDir();
-    this.sessionManager = deps.sessionManager ?? provider?.sessionManager ?? SessionManager;
-    this.modelRegistry = deps.modelRegistry ?? provider?.modelRegistry ?? ModelRegistry.create(AuthStorage.create());
-    this.createRuntime = deps.createRuntime ?? createDefaultRuntimeFactory(this.modelRegistry.authStorage, this.modelRegistry);
-    this.createAgentRuntime = deps.createAgentRuntime ?? (provider === undefined ? defaultCreateAgentRuntime : (_createRuntime, options) => provider.createAgentRuntime(options));
+    this.agentDir = deps.agentDir ?? provider?.agentDir ?? defaultEarendilAgentDir();
+    this.sessionManager = deps.sessionManager ?? provider?.sessionManager ?? emptySessionManagerGateway();
+    this.modelRegistry = deps.modelRegistry ?? provider?.modelRegistry ?? emptyModelRegistry();
+    this.createRuntime = deps.createRuntime ?? unconfiguredRuntimeFactory;
+    this.createAgentRuntime = deps.createAgentRuntime ?? (provider === undefined ? unconfiguredCreateAgentRuntime : (_createRuntime, options) => provider.createAgentRuntime(options));
     this.workspaceActivity = deps.workspaceActivity;
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
     this.commandService = new SessionCommandService(
@@ -912,7 +929,7 @@ function modelToClientModel(model: PiAgentSession["model"]): ClientSessionModel 
     provider: model.provider,
     id: model.id,
     ...(name === undefined ? {} : { name }),
-    contextWindow: model.contextWindow,
+    ...(typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
     ...(reasoning === undefined ? {} : { reasoning }),
   };
 }

@@ -4,7 +4,6 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DefaultPackageManager, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { PiWebComponentStatus, PiWebInstallationInfo, PiWebReleaseStatus, PiWebServiceComponent, PiWebStatusMessage, PiWebStatusResponse, PiWebVersionResponse } from "../shared/apiTypes.js";
 import { parsePiWebComponentStatus } from "../shared/piWebStatusParsing.js";
 import { SessionDaemonClient } from "../sessiond/sessionDaemonClient.js";
@@ -167,7 +166,8 @@ async function detectPiWebInstallation(): Promise<PiWebInstallationInfo> {
 
 async function detectPiPackageInstallation(realRoot: string, displayPath: string): Promise<PiWebInstallationInfo | undefined> {
   try {
-    const agentDir = getAgentDir();
+    const agentDir = defaultEarendilAgentDir();
+    const { DefaultPackageManager, SettingsManager } = await import("@earendil-works/pi-coding-agent");
     const packageManager = new DefaultPackageManager({
       cwd: process.cwd(),
       agentDir,
@@ -185,6 +185,11 @@ async function detectPiPackageInstallation(realRoot: string, displayPath: string
     return undefined;
   }
   return undefined;
+}
+
+function defaultEarendilAgentDir(): string {
+  const configured = process.env["PI_CODING_AGENT_DIR"];
+  return configured === undefined || configured === "" ? join(homedir(), ".pi", "agent") : configured;
 }
 
 async function detectNpmGlobalInstallation(realRoot: string, displayPath: string): Promise<PiWebInstallationInfo | undefined> {

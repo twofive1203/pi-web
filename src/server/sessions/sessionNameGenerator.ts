@@ -1,19 +1,33 @@
 /* eslint-disable @typescript-eslint/consistent-type-assertions, @typescript-eslint/no-unnecessary-type-assertion -- Runtime-neutral title generation bridges structurally compatible Earendil and OMP SDK types. */
-import { getApiProvider, type Api, type AssistantMessage, type Model, type SimpleStreamOptions } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 const SESSION_NAME_TIMEOUT_MS = 10_000;
 const SESSION_NAME_MAX_INPUT_CHARS = 4_000;
 const SESSION_NAME_MAX_LENGTH = 60;
 const FALLBACK_SESSION_NAME_MAX_WORDS = 6;
 
+interface ModelLike {
+  api?: string;
+}
+
+interface AssistantMessageLike {
+  content: readonly unknown[];
+}
+
+interface SessionNameStreamOptions {
+  maxTokens: number;
+  reasoning: "minimal";
+  signal: AbortSignal;
+  apiKey?: string;
+  headers?: Record<string, string>;
+}
+
 type SessionNameEvent =
   | { type: "text_delta"; delta: string }
-  | { type: "done"; message: AssistantMessage }
+  | { type: "done"; message: AssistantMessageLike }
   | { type: "error" }
   | { type: string };
 
-export async function generateShortSessionName<TApi extends Api>(modelRegistry: ModelRegistry, model: Model<TApi>, firstMessage: string): Promise<string | undefined> {
+export async function generateShortSessionName(modelRegistry: unknown, model: ModelLike, firstMessage: string): Promise<string | undefined> {
   const context = {
     systemPrompt: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.",
     messages: [{
@@ -25,15 +39,12 @@ export async function generateShortSessionName<TApi extends Api>(modelRegistry: 
   const options = await sessionNameStreamOptions(modelRegistry, model);
   if (options === undefined) return undefined;
 
-  const oldProvider = typeof (modelRegistry as unknown as { getApiKeyAndHeaders?: unknown }).getApiKeyAndHeaders === "function"
-    ? getApiProvider(model.api)
-    : undefined;
-  const stream: AsyncIterable<SessionNameEvent> = oldProvider === undefined
-    ? await ompSessionNameStream(model, context, options)
-    : oldProvider.streamSimple(model, context, options) as AsyncIterable<SessionNameEvent>;
+  const stream: AsyncIterable<SessionNameEvent> = typeof (modelRegistry as { getApiKeyAndHeaders?: unknown }).getApiKeyAndHeaders === "function"
+    ? await earendilSessionNameStream(model, context, options)
+    : await ompSessionNameStream(model, context, options);
 
   let streamedText = "";
-  let finalMessage: AssistantMessage | undefined;
+  let finalMessage: AssistantMessageLike | undefined;
   for await (const event of stream) {
     if (event.type === "text_delta" && "delta" in event && typeof event.delta === "string") streamedText += event.delta;
     if (event.type === "done" && "message" in event) finalMessage = event.message;
@@ -67,21 +78,21 @@ export function cleanSessionName(value: string): string | undefined {
   return title === "" ? undefined : title;
 }
 
-function textFromAssistant(message: AssistantMessage): string {
+function textFromAssistant(message: AssistantMessageLike): string {
   return message.content
-    .filter((part) => part.type === "text")
+    .filter(isTextPart)
     .map((part) => part.text)
     .join("");
 }
 
-async function sessionNameStreamOptions<TApi extends Api>(modelRegistry: ModelRegistry, model: Model<TApi>): Promise<SimpleStreamOptions | undefined> {
+async function sessionNameStreamOptions(modelRegistry: unknown, model: ModelLike): Promise<SessionNameStreamOptions | undefined> {
   const base = {
     maxTokens: 24,
     reasoning: "minimal" as const,
     signal: AbortSignal.timeout(SESSION_NAME_TIMEOUT_MS),
   };
   const oldRegistry = modelRegistry as unknown as {
-    getApiKeyAndHeaders?(model: Model<TApi>): Promise<{ ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false }>;
+    getApiKeyAndHeaders?(model: ModelLike): Promise<{ ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false }>;
   };
   if (typeof oldRegistry.getApiKeyAndHeaders === "function") {
     const auth = await oldRegistry.getApiKeyAndHeaders(model);
@@ -101,9 +112,24 @@ async function sessionNameStreamOptions<TApi extends Api>(modelRegistry: ModelRe
   return apiKey === undefined ? undefined : { ...base, apiKey };
 }
 
-async function ompSessionNameStream<TApi extends Api>(model: Model<TApi>, context: unknown, options: SimpleStreamOptions): Promise<AsyncIterable<SessionNameEvent>> {
+async function ompSessionNameStream(model: ModelLike, context: unknown, options: SessionNameStreamOptions): Promise<AsyncIterable<SessionNameEvent>> {
   const piAi = await import("@oh-my-pi/pi-ai");
   return piAi.streamSimple(model as never, context as never, options as never) as AsyncIterable<SessionNameEvent>;
+}
+
+async function earendilSessionNameStream(model: ModelLike, context: unknown, options: SessionNameStreamOptions): Promise<AsyncIterable<SessionNameEvent>> {
+  if (typeof model.api !== "string") return emptySessionNameStream();
+  const piAi = await import("@earendil-works/pi-ai");
+  const provider = piAi.getApiProvider(model.api as never);
+  return provider === undefined ? emptySessionNameStream() : provider.streamSimple(model as never, context as never, options as never) as AsyncIterable<SessionNameEvent>;
+}
+
+async function* emptySessionNameStream(): AsyncIterable<SessionNameEvent> {
+  // Intentionally empty.
+}
+
+function isTextPart(value: unknown): value is { type: "text"; text: string } {
+  return typeof value === "object" && value !== null && "type" in value && value.type === "text" && "text" in value && typeof value.text === "string";
 }
 
 function truncateInput(value: string): string {
