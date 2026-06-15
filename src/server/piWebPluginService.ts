@@ -140,6 +140,9 @@ export class PiWebPluginService {
     this.configProvider = options.configProvider ?? (() => loadPiWebConfig({ cwd }).config);
   }
 
+  /** Exposed for testing: returns the resolved package provider (or undefined when disabled). */
+  getProvider(): PiPackageProvider | undefined { return this.packageProvider; }
+
   async manifest(): Promise<PiWebPluginManifest> {
     return {
       plugins: (await this.plugins()).plugins
@@ -212,7 +215,7 @@ export class PiWebPluginService {
 }
 
 function defaultAgentDirForRuntime(): string {
-  if (process.env["PI_WEB_AGENT_RUNTIME"] !== "omp") return defaultEarendilAgentDir();
+  if (process.env["PI_WEB_AGENT_RUNTIME"] === "earendil") return defaultEarendilAgentDir();
   const configured = process.env["PI_WEB_OMP_AGENT_DIR"] ?? process.env["PI_CODING_AGENT_DIR"];
   return configured === undefined || configured === "" ? join(homedir(), ".omp", "agent") : configured;
 }
@@ -223,9 +226,9 @@ function defaultEarendilAgentDir(): string {
 }
 
 function defaultPackageProvider(cwd: string, agentDir: string): PiPackageProvider {
-  return process.env["PI_WEB_AGENT_RUNTIME"] === "omp"
-    ? new OmpPiPackageProvider(cwd, agentDir)
-    : new DefaultPiPackageProvider(cwd, agentDir);
+  return process.env["PI_WEB_AGENT_RUNTIME"] === "earendil"
+    ? new DefaultPiPackageProvider(cwd, agentDir)
+    : new OmpPiPackageProvider(cwd, agentDir);
 }
 
 function defaultPluginRoots(cwd: string): LocalPluginRoot[] {

@@ -190,7 +190,7 @@ function isLingerEnabled(): boolean | undefined {
 }
 
 function parseInstallOptions(args: string[]): InstallOptions {
-  const options: InstallOptions = { host: "127.0.0.1", port: "8504", mode: "production", runtime: "earendil" };
+  const options: InstallOptions = { host: "127.0.0.1", port: "8504", mode: "production", runtime: "omp" };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === undefined) continue;
@@ -369,7 +369,7 @@ function serviceExecutable(envName: "PI_WEB_SERVER_EXEC" | "PI_WEB_SESSIOND_EXEC
   return commandExecutable(command, backend);
 }
 
-function resolveServiceExecutables(backend: ServiceBackend, runtime: AgentRuntime = "earendil"): ServiceExecutables {
+function resolveServiceExecutables(backend: ServiceBackend, runtime: AgentRuntime = "omp"): ServiceExecutables {
   return {
     sessiond: runtime === "omp" ? ompSessiondExecutable(backend) : serviceExecutable("PI_WEB_SESSIOND_EXEC", "pi-web-sessiond", packageEntrypointPath("sessiond"), backend),
     web: serviceExecutable("PI_WEB_SERVER_EXEC", "pi-web-server", packageEntrypointPath("server"), backend),
@@ -391,7 +391,7 @@ function configEnvironment(options: InstallOptions, configPath: string): Record<
 }
 
 function agentRuntimeEnvironment(runtime: AgentRuntime): Record<string, string> {
-  return runtime === "omp" ? { PI_WEB_AGENT_RUNTIME: "omp" } : {};
+  return runtime === "earendil" ? { PI_WEB_AGENT_RUNTIME: "earendil" } : {};
 }
 
 function serviceRefList(ids: ServiceId[]): ServiceRef[] {
@@ -460,7 +460,7 @@ function validateDevCheckout(root: string, runtime: AgentRuntime): void {
 
   const scripts = parsed["scripts"];
   if (!isRecord(scripts)) throw new Error(`Development mode requires npm scripts in ${packageJsonPath}.`);
-  const requiredScripts = runtime === "omp" ? ["start:sessiond:omp", "dev:web:omp", "dev:client"] : ["start:sessiond", "dev:web", "dev:client"];
+  const requiredScripts = runtime === "omp" ? ["start:sessiond:omp", "dev:web:omp", "dev:client"] : ["start:sessiond:earendil", "dev:web:earendil", "dev:client"];
   const missing = requiredScripts.filter((script) => typeof scripts[script] !== "string");
   if (missing.length > 0) throw new Error(`Development mode requires missing npm scripts: ${missing.join(", ")}.`);
 }
@@ -470,7 +470,7 @@ function devServiceDefinitions(options: InstallOptions, configPath: string, root
     {
       ...serviceRefs.sessiond,
       description: "PI WEB session daemon (dev)",
-      shellCommand: `exec npm run ${options.runtime === "omp" ? "start:sessiond:omp" : "start:sessiond"}`,
+      shellCommand: `exec npm run ${options.runtime === "omp" ? "start:sessiond:omp" : "start:sessiond:earendil"}`,
       restart: "never",
       environment: agentRuntimeEnvironment(options.runtime),
       workingDirectory: root,
@@ -478,7 +478,7 @@ function devServiceDefinitions(options: InstallOptions, configPath: string, root
     {
       ...serviceRefs.uiDev,
       description: "PI WEB UI dev server",
-      shellCommand: `exec /usr/bin/env bash -c ${serviceShellQuote(options.runtime === "omp" ? 'trap "kill 0" EXIT; npm run dev:web:omp & npm run dev:client & wait' : 'trap "kill 0" EXIT; npm run dev:web & npm run dev:client & wait')}`,
+      shellCommand: `exec /usr/bin/env bash -c ${serviceShellQuote(options.runtime === "omp" ? 'trap "kill 0" EXIT; npm run dev:web:omp & npm run dev:client & wait' : 'trap "kill 0" EXIT; npm run dev:web:earendil & npm run dev:client & wait')}`,
       restart: "never",
       environment: { ...configEnvironment(options, configPath), ...agentRuntimeEnvironment(options.runtime) },
       after: ["sessiond"],
@@ -700,10 +700,13 @@ function serviceInstallMode(backend: ServiceBackend): string {
 
 function installedAgentRuntime(backend: ServiceBackend | undefined): AgentRuntime {
   const envRuntime = process.env["PI_WEB_AGENT_RUNTIME"];
+  if (envRuntime === "earendil") return "earendil";
   if (envRuntime === "omp") return "omp";
-  if (backend === undefined || !serviceFileExists(backend, serviceRefs.sessiond)) return "earendil";
+  if (backend === undefined || !serviceFileExists(backend, serviceRefs.sessiond)) return "omp";
   const serviceText = readFileSync(serviceFilePath(backend, serviceRefs.sessiond), "utf8");
-  return serviceText.includes("PI_WEB_AGENT_RUNTIME=omp") || serviceText.includes("start:sessiond:omp") || serviceText.includes("bun ") ? "omp" : "earendil";
+  if (serviceText.includes("PI_WEB_AGENT_RUNTIME=earendil") || serviceText.includes("start:sessiond:earendil") || serviceText.includes("dev:web:earendil")) return "earendil";
+  if (serviceText.includes("PI_WEB_AGENT_RUNTIME=omp") || serviceText.includes("start:sessiond:omp") || serviceText.includes("dev:web:omp") || serviceText.includes("bun ")) return "omp";
+  return "earendil";
 }
 
 function makeServiceRuntimeStatus(ref: ServiceRef, health: ServiceHealth, detail: string, target: string, filePath: string, pid?: string): ServiceRuntimeStatus {
@@ -1116,7 +1119,7 @@ Recommended install:
 
 Development service install from a checkout:
   pi-web install --dev
-  pi-web install --dev --runtime omp
+  pi-web install --dev --runtime earendil
 `);
 }
 

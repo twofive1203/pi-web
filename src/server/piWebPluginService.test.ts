@@ -2,15 +2,24 @@ import { mkdtemp, rm, writeFile, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PiWebPluginService, type PiPackageProvider } from "./piWebPluginService.js";
+import { DefaultPiPackageProvider, OmpPiPackageProvider, PiWebPluginService, type PiPackageProvider } from "./piWebPluginService.js";
 
 let tempDir: string;
+const originalAgentRuntime = process.env["PI_WEB_AGENT_RUNTIME"];
+const originalOmpAgentDir = process.env["PI_WEB_OMP_AGENT_DIR"];
+const originalPiAgentDir = process.env["PI_CODING_AGENT_DIR"];
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), "pi-web-plugin-service-test-"));
 });
 
 afterEach(async () => {
+  if (originalAgentRuntime === undefined) delete process.env["PI_WEB_AGENT_RUNTIME"];
+  else process.env["PI_WEB_AGENT_RUNTIME"] = originalAgentRuntime;
+  if (originalOmpAgentDir === undefined) delete process.env["PI_WEB_OMP_AGENT_DIR"];
+  else process.env["PI_WEB_OMP_AGENT_DIR"] = originalOmpAgentDir;
+  if (originalPiAgentDir === undefined) delete process.env["PI_CODING_AGENT_DIR"];
+  else process.env["PI_CODING_AGENT_DIR"] = originalPiAgentDir;
   await rm(tempDir, { recursive: true, force: true });
 });
 
@@ -174,6 +183,17 @@ describe("PiWebPluginService", () => {
     const manifest = await service.manifest();
     expect(manifest.plugins).toHaveLength(1);
     await expect(service.readAsset("safe", "../escape.js")).resolves.toBeUndefined();
+  });
+  it("defaults package discovery to OMP when runtime is unset", () => {
+    delete process.env["PI_WEB_AGENT_RUNTIME"];
+    const service = new PiWebPluginService({ cwd: tempDir, roots: [], configProvider: () => ({}) });
+    expect(service.getProvider()).toBeInstanceOf(OmpPiPackageProvider);
+  });
+
+  it("switches package discovery back to earendil only when explicitly selected", () => {
+    process.env["PI_WEB_AGENT_RUNTIME"] = "earendil";
+    const service = new PiWebPluginService({ cwd: tempDir, roots: [], configProvider: () => ({}) });
+    expect(service.getProvider()).toBeInstanceOf(DefaultPiPackageProvider);
   });
 });
 

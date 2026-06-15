@@ -2,15 +2,17 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { comparePackageVersions, getPiWebStatus, getPiWebVersionStatus } from "./piWebStatus.js";
+import { comparePackageVersions, getPiWebComponentStatus, getPiWebStatus, getPiWebVersionStatus } from "./piWebStatus.js";
 import { SessionDaemonClient } from "../sessiond/sessionDaemonClient.js";
 import type { PiWebComponentStatus } from "../shared/apiTypes.js";
 
 const originalSkipVersionCheck = process.env["PI_WEB_SKIP_VERSION_CHECK"];
 const originalHome = process.env["HOME"];
+const originalAgentRuntime = process.env["PI_WEB_AGENT_RUNTIME"];
 
 afterEach(() => {
   restoreEnv("PI_WEB_SKIP_VERSION_CHECK", originalSkipVersionCheck);
+  restoreEnv("PI_WEB_AGENT_RUNTIME", originalAgentRuntime);
   restoreEnv("HOME", originalHome);
   vi.restoreAllMocks();
 });
@@ -22,6 +24,17 @@ describe("PI WEB status", () => {
     expect(comparePackageVersions("1.202605.7", "1.202605.8")).toBeLessThan(0);
   });
 
+  it("defaults session daemon status to omp runtime", async () => {
+    delete process.env["PI_WEB_AGENT_RUNTIME"];
+    const status = await getPiWebComponentStatus("sessiond");
+    expect(status.agentRuntime).toBe("omp");
+  });
+
+  it("reports earendil session daemon status when explicitly selected", async () => {
+    process.env["PI_WEB_AGENT_RUNTIME"] = "earendil";
+    const status = await getPiWebComponentStatus("sessiond");
+    expect(status.agentRuntime).toBe("earendil");
+  });
   it("returns installed and running version components without release metadata", async () => {
     const daemon = daemonWithComponent({
       component: "sessiond",

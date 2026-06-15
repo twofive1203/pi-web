@@ -22,9 +22,9 @@ await app.register(fastifyWebsocket);
 const eventHub = new SessionEventHub();
 const workspaceActivity = new WorkspaceActivityService(eventHub);
 const ompAgentDir = process.env["PI_WEB_OMP_AGENT_DIR"];
-const sessionProvider = process.env["PI_WEB_AGENT_RUNTIME"] === "omp"
-  ? await createOmpSessionProvider(ompAgentDir === undefined || ompAgentDir === "" ? {} : { agentDir: ompAgentDir })
-  : (await import("./sessions/earendilSessionProvider.js")).createEarendilSessionProvider();
+const sessionProvider = process.env["PI_WEB_AGENT_RUNTIME"] === "earendil"
+  ? (await import("./sessions/earendilSessionProvider.js")).createEarendilSessionProvider()
+  : await createOmpSessionProvider(ompAgentDir === undefined || ompAgentDir === "" ? {} : { agentDir: ompAgentDir });
 const auth = new AuthService({ modelRegistry: sessionProvider.modelRegistry });
 const sessions = new PiSessionService(eventHub, { provider: sessionProvider, workspaceActivity });
 auth.subscribe((change) => { void sessions.applyAuthChange(change); });

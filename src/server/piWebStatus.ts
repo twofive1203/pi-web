@@ -247,7 +247,7 @@ function unavailableSessiond(error: string): PiWebComponentStatus {
 }
 
 function currentAgentRuntime(): "earendil" | "omp" {
-  return process.env["PI_WEB_AGENT_RUNTIME"] === "omp" ? "omp" : "earendil";
+  return process.env["PI_WEB_AGENT_RUNTIME"] === "earendil" ? "earendil" : "omp";
 }
 
 async function getLatestReleaseStatus(currentVersion: string): Promise<PiWebReleaseStatus> {
