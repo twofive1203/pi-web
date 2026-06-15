@@ -12,6 +12,12 @@ if /I "%~1"=="plugins" goto plugins
 if not "%~1"=="" goto unknown
 
 cd /d "%ROOT%" || exit /b 1
+where bun >nul 2>nul
+if errorlevel 1 (
+  echo Bun is required for the OMP session daemon. Install Bun, then rerun this script.
+  exit /b 1
+)
+
 
 echo Building plugins once before starting watchers...
 call npm run build:plugins || exit /b %ERRORLEVEL%
@@ -59,6 +65,7 @@ echo   scripts\start-windows.cmd
 echo   npm run dev:windows
 echo.
 echo Starts the OMP-adapted local dev stack on Windows:
+echo Requires Bun on PATH for the OMP session daemon.
 echo   - session daemon on 127.0.0.1:8704
 echo   - web/API on 127.0.0.1:8504
 echo   - Vite client
