@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -165,31 +165,37 @@ async function detectPiWebInstallation(): Promise<PiWebInstallationInfo> {
 }
 
 async function detectPiPackageInstallation(realRoot: string, displayPath: string): Promise<PiWebInstallationInfo | undefined> {
-  try {
-    const agentDir = defaultEarendilAgentDir();
-    const { DefaultPackageManager, SettingsManager } = await import("@earendil-works/pi-coding-agent");
-    const packageManager = new DefaultPackageManager({
-      cwd: process.cwd(),
-      agentDir,
-      settingsManager: SettingsManager.create(process.cwd(), agentDir),
-    });
-    for (const configuredPackage of packageManager.listConfiguredPackages()) {
-      const installedPath = configuredPackage.installedPath ?? packageManager.getInstalledPath(configuredPackage.source, configuredPackage.scope);
-      if (installedPath === undefined) continue;
-      const realInstalledPath = await realPathOrSelf(installedPath);
-      if (isSameOrWithin(realInstalledPath, realRoot) || isSameOrWithin(realRoot, realInstalledPath)) {
-        return { kind: "pi-package", path: displayPath, source: configuredPackage.source, scope: configuredPackage.scope };
-      }
+  const roots = await ompInstalledPackageRoots();
+  for (const root of roots) {
+    const realInstalledPath = await realPathOrSelf(root.path);
+    if (isSameOrWithin(realInstalledPath, realRoot) || isSameOrWithin(realRoot, realInstalledPath)) {
+      return { kind: "pi-package", path: displayPath, source: root.source, scope: "user" };
     }
-  } catch {
-    return undefined;
   }
   return undefined;
 }
 
-function defaultEarendilAgentDir(): string {
-  const configured = process.env["PI_CODING_AGENT_DIR"];
-  return configured === undefined || configured === "" ? join(homedir(), ".pi", "agent") : configured;
+async function ompInstalledPackageRoots(): Promise<{ source: string; path: string }[]> {
+  const piUtils = await import("@oh-my-pi/pi-utils").catch(() => undefined);
+  if (piUtils === undefined) return [];
+  const configuredAgentDir = process.env["PI_WEB_OMP_AGENT_DIR"] ?? process.env["PI_CODING_AGENT_DIR"];
+  if (configuredAgentDir !== undefined && configuredAgentDir !== "") piUtils.setAgentDir(configuredAgentDir);
+  const modulesRoot = piUtils.getPluginsNodeModules();
+  const entries = await readdir(modulesRoot, { withFileTypes: true }).catch(() => []);
+  const roots: { source: string; path: string }[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith("@") && entry.isDirectory()) {
+      const scopeRoot = join(modulesRoot, entry.name);
+      const scopedEntries = await readdir(scopeRoot, { withFileTypes: true }).catch(() => []);
+      for (const scopedEntry of scopedEntries) {
+        if (scopedEntry.isDirectory()) roots.push({ source: `${entry.name}/${scopedEntry.name}`, path: join(scopeRoot, scopedEntry.name) });
+      }
+    } else if (entry.isDirectory()) {
+      roots.push({ source: entry.name, path: join(modulesRoot, entry.name) });
+    }
+  }
+  return roots;
 }
 
 async function detectNpmGlobalInstallation(realRoot: string, displayPath: string): Promise<PiWebInstallationInfo | undefined> {
@@ -246,8 +252,8 @@ function unavailableSessiond(error: string): PiWebComponentStatus {
   };
 }
 
-function currentAgentRuntime(): "earendil" | "omp" {
-  return process.env["PI_WEB_AGENT_RUNTIME"] === "earendil" ? "earendil" : "omp";
+function currentAgentRuntime(): "omp" {
+  return "omp";
 }
 
 async function getLatestReleaseStatus(currentVersion: string): Promise<PiWebReleaseStatus> {

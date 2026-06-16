@@ -31,7 +31,7 @@ async function importOmpSdk(): Promise<OmpSdk> {
     return await import("@oh-my-pi/pi-coding-agent");
   } catch (error: unknown) {
     if (error instanceof Error && error.message.includes("Cannot find package 'bun'")) {
-      throw new Error("OMP SDK requires Bun runtime APIs. Start pi-web-sessiond with Bun before setting PI_WEB_AGENT_RUNTIME=omp.", { cause: error });
+      throw new Error("OMP SDK requires Bun runtime APIs. Start pi-web-sessiond with Bun.", { cause: error });
     }
     throw error;
   }

@@ -212,19 +212,11 @@ Open the Vite URL, usually <http://localhost:8505>.
 
 During development, the static marketing/docs site is also served by the Vite dev server at <http://localhost:8505/site/>.
 
-For the recommended split development setup, run these in separate terminals. This now defaults to the OMP runtime:
+For the recommended split development setup, run these in separate terminals. PI WEB uses the OMP runtime:
 
 ```bash
 npm run dev:sessiond
 npm run dev:web
-npm run dev:client
-```
-
-For the earendil runtime, use the explicit earendil scripts:
-
-```bash
-npm run dev:sessiond:earendil
-npm run dev:web:earendil
 npm run dev:client
 ```
 
@@ -238,10 +230,9 @@ Or install the split development setup as native per-user services from the chec
 
 ```bash
 pi-web install --dev
-pi-web install --dev --runtime earendil
 ```
 
-`pi-web install --dev` now writes the session daemon plus a UI development service in OMP mode by default. Use `--runtime earendil` to run `start:sessiond:earendil` and `dev:web:earendil`; OMP requires Bun on `PATH`. `pi-web uninstall` removes both production and development service files; no uninstall flags are needed.
+`pi-web install --dev` writes the session daemon plus a UI development service in OMP mode. OMP requires Bun on `PATH`. `pi-web uninstall` removes both production and development service files; no uninstall flags are needed.
 
 `dev:web` also watches bundled plugin TypeScript and rebuilds the browser-loaded plugin JavaScript under `dist/pi-web-plugins/`. You can restart `dev:web` or `dev:client` without stopping active Pi sessions.
 
@@ -257,7 +248,6 @@ Production-style services can be installed from the checkout or global package w
 
 ```bash
 pi-web install
-pi-web install --runtime earendil
 ```
 
 ## Packaging and publishing
@@ -272,7 +262,7 @@ npm publish --access public
 
 PI WEB uses a single-line CalVer-inspired npm version: `MAJOR.YYYYMM.SEQUENCE`, for example `1.202605.1`. The major number signals breaking-change eras; the middle number is the release month; the final number increments for additional releases in that month. Older major eras may be deprecated rather than maintained in parallel.
 
-PI WEB declares both Earendil (`@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`) and OMP (`@oh-my-pi/pi-ai`, `@oh-my-pi/pi-coding-agent`) runtime packages as optional peer dependencies. OMP is now the default runtime; pass `--runtime earendil` or set `PI_WEB_AGENT_RUNTIME=earendil` when you need the legacy Earendil flow. OMP sessiond execution requires Bun.
+PI WEB uses OMP (`@oh-my-pi/pi-ai`, `@oh-my-pi/pi-coding-agent`) as its agent runtime. OMP sessiond execution requires Bun.
 
 
 The web server defaults to `127.0.0.1:8504`. Set `PI_WEB_HOST=0.0.0.0` only when you intentionally want to bind directly on all interfaces.
@@ -292,7 +282,6 @@ Environment variables:
 - `PI_WEB_SESSIOND_PORT` — optional TCP port for the daemon. If unset, the daemon listens on the Unix socket instead.
 - `PI_WEB_SESSIOND_HOST` — daemon TCP bind host when `PI_WEB_SESSIOND_PORT` is set. Defaults to `127.0.0.1`.
 - `PI_WEB_SESSIOND_URL` — daemon URL used by the web process when connecting over TCP, for example `http://127.0.0.1:3001`. If you set `PI_WEB_SESSIOND_PORT`, set this for the web process too.
-- `PI_WEB_AGENT_RUNTIME` — agent runtime selector. Defaults to OMP when unset; set it to `earendil` for the legacy runtime.
 - `PI_WEB_OMP_AGENT_DIR` — optional OMP agent directory override for sessiond and plugin discovery.
 - `PI_WEB_PROJECTS_FILE` — optional override for the projects storage JSON file. Defaults to `$PI_WEB_DATA_DIR/projects.json`.
 - `PI_WEB_MACHINES_FILE` — optional override for the remote machine registry JSON file. Defaults to `$PI_WEB_DATA_DIR/machines.json`.

@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
 
 const mode = process.argv[2];
-const runtime = process.argv[3] ?? "omp";
 
-if ((mode !== "stack" && mode !== "web") || (runtime !== "omp" && runtime !== "earendil")) {
-  throw new Error(`Usage: node scripts/run-dev.mjs <stack|web> <omp|earendil>; received mode=${String(mode)} runtime=${String(runtime)}`);
+if (mode !== "stack" && mode !== "web") {
+  throw new Error(`Usage: node scripts/run-dev.mjs <stack|web>; received mode=${String(mode)}`);
 }
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -14,16 +13,16 @@ const spawnCommand = (script) => process.platform === "win32"
 const children = [];
 let shuttingDown = false;
 
-function devScripts(selectedMode, selectedRuntime) {
+function devScripts(selectedMode) {
   if (selectedMode === "web") {
     return [
       "dev:plugins",
-      selectedRuntime === "omp" ? "dev:web:server:omp" : "dev:web:server:earendil",
+      "dev:web:server:omp",
     ];
   }
   return [
-    selectedRuntime === "omp" ? "dev:sessiond:omp" : "dev:sessiond:earendil",
-    selectedRuntime === "omp" ? "dev:web:omp" : "dev:web:earendil",
+    "dev:sessiond:omp",
+    "dev:web:omp",
     "dev:client",
   ];
 }
@@ -42,7 +41,7 @@ function shutdown(code = 0) {
   process.exitCode = code;
 }
 
-for (const script of devScripts(mode, runtime)) {
+for (const script of devScripts(mode)) {
   const child = spawnCommand(script);
   children.push(child);
   child.on("exit", (code, signal) => {

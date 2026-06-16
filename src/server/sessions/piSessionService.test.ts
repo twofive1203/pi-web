@@ -1,4 +1,3 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSessionEvent, SessionUiEvent } from "../../shared/apiTypes.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
@@ -19,6 +18,7 @@ class CapturingSessionEventHub extends SessionEventHub {
 
 type SessionGateway = NonNullable<PiSessionServiceDependencies["sessionManager"]>;
 type RuntimeCreator = NonNullable<PiSessionServiceDependencies["createAgentRuntime"]>;
+interface TestCredential { type: "api_key"; key: string; [key: string]: unknown }
 
 interface TestSession extends PiAgentSession {
   sessionName: string | undefined;
@@ -29,6 +29,31 @@ interface TestSession extends PiAgentSession {
   pendingMessageCount: number;
   getSteeringMessages: () => readonly string[];
   getFollowUpMessages: () => readonly string[];
+}
+
+
+function fakeAuthStorage(initialData: Record<string, TestCredential> = {}) {
+  const data = new Map(Object.entries(initialData));
+  return {
+    get: (provider: string) => data.get(provider),
+    set: (provider: string, credential: TestCredential) => { data.set(provider, credential); },
+    login: () => Promise.resolve(),
+    logout: (provider: string) => { data.delete(provider); },
+    reload: () => undefined,
+    list: () => [...data.keys()],
+  };
+}
+
+function fakeModelRegistry(authStorage = fakeAuthStorage(), models: PiAgentSession["model"][] = []) {
+  const definedModels = models.filter((model): model is NonNullable<PiAgentSession["model"]> => model !== undefined);
+  return {
+    authStorage,
+    refresh: () => undefined,
+    getAll: () => definedModels,
+    getAvailable: () => definedModels.filter((model) => authStorage.get(model.provider) !== undefined),
+    find: (provider: string, modelId: string) => definedModels.find((model) => model.provider === provider && model.id === modelId),
+    hasConfiguredAuth: (model: NonNullable<PiAgentSession["model"]>) => authStorage.get(model.provider) !== undefined,
+  };
 }
 
 function fakeSessionManager(cwd = "/workspace"): PiSessionManager {
@@ -72,7 +97,7 @@ function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession> = {}) 
     isBashRunning: false,
     pendingMessageCount: 0,
     sessionManager: fakeSessionManager(),
-    modelRegistry: ModelRegistry.create(AuthStorage.inMemory()),
+    modelRegistry: fakeModelRegistry(),
     scopedModels: [],
     extensionRunner: { getRegisteredCommands: () => [] },
     promptTemplates: [],
@@ -175,7 +200,7 @@ describe("PiSessionService", () => {
     let createCalls = 0;
     const provider: PiSessionProvider = {
       agentDir: "/omp-agent",
-      modelRegistry: ModelRegistry.create(AuthStorage.inMemory()),
+      modelRegistry: fakeModelRegistry(),
       sessionManager: {
         create: () => sessionManager,
         list: () => Promise.resolve([]),
@@ -573,10 +598,9 @@ describe("PiSessionService", () => {
 
   it("refreshes auth state and dedupes warnings when logout removes the current model's credentials", async () => {
     const hub = new CapturingSessionEventHub();
-    const authStorage = AuthStorage.inMemory({ anthropic: { type: "api_key", key: "sk-test" } });
-    const modelRegistry = ModelRegistry.create(authStorage);
-    const model = modelRegistry.find("anthropic", "claude-3-5-sonnet-20241022");
-    if (model === undefined) throw new Error("Expected Anthropic model fixture");
+    const model = { provider: "anthropic", id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" };
+    const authStorage = fakeAuthStorage({ anthropic: { type: "api_key", key: "sk-test" } });
+    const modelRegistry = fakeModelRegistry(authStorage, [model]);
     const fake = fakeRuntime("auth-session", { model, modelRegistry });
 
     const service = new PiSessionService(hub, {

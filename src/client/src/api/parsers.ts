@@ -1,4 +1,4 @@
-import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, AuthProvidersResponse, AuthStatusSource, AuthType, CommandOption, CommandResult, FileContentResponse, FileSuggestion, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse, Machine, MachineHealth, MachineKind, MachineStatus, MessagePage, ModelSelectionResponse, OAuthFlowState, PiWebComponentStatus, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues, PiWebInstallationInfo, PiWebPluginConfigMap, PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope, PiWebReleaseStatus, PiWebServiceComponent, PiWebShortcutConfig, PiWebStatusMessage, PiWebStatusResponse, PiWebStatusSeverity, Project, QueuedSessionMessage, SessionInfo, SessionModel, SessionStatus, SlashCommand, TerminalCommandRun, TerminalCommandRunStatus, TerminalInfo, ThinkingLevel, ThinkingLevelsResponse, Workspace, WorkspaceActivity, WorkspaceActivityResponse } from "../../../shared/apiTypes";
+import type { ArchiveSessionsResponse, AuthProviderOption, AuthProviderStatus, AuthProvidersResponse, AuthStatusSource, AuthType, CommandOption, CommandResult, FileContentResponse, FileSuggestion, FileTreeEntry, FileTreeResponse, GitDiffResponse, GitFileState, GitStatusFile, GitStatusResponse, Machine, MachineHealth, MachineKind, MachineStatus, MessagePage, ModelSelectionResponse, OAuthFlowState, OmpModelApi, OmpModelCost, OmpModelDefinition, OmpModelsConfig, OmpModelsConfigResponse, OmpModelSettingsConfig, OmpModelSettingsResponse, OmpProviderAuth, OmpProviderConfig, OmpProviderDiscoveryType, OmpThinkingBudgets, OmpThinkingLevel, PiWebComponentStatus, PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues, PiWebInstallationInfo, PiWebPluginConfigMap, PiWebPluginInfo, PiWebPluginsResponse, PiWebPluginScope, PiWebReleaseStatus, PiWebServiceComponent, PiWebShortcutConfig, PiWebStatusMessage, PiWebStatusResponse, PiWebStatusSeverity, Project, QueuedSessionMessage, SessionInfo, SessionModel, SessionStatus, SlashCommand, TerminalCommandRun, TerminalCommandRunStatus, TerminalInfo, ThinkingLevel, ThinkingLevelsResponse, Workspace, WorkspaceActivity, WorkspaceActivityResponse } from "../../../shared/apiTypes";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -197,6 +197,165 @@ function optionalModel(value: unknown): Pick<SessionStatus, "model"> | object {
 export function parseModelSelectionResponse(value: unknown): ModelSelectionResponse {
   const record = requireRecord(value);
   return { models: arrayOf(parseSessionModel)(record["models"]) };
+}
+
+export function parseOmpModelsConfigResponse(value: unknown): OmpModelsConfigResponse {
+  const record = requireRecord(value);
+  return { path: requireString(record, "path"), exists: requireBoolean(record, "exists"), config: parseOmpModelsConfig(record["config"]) };
+}
+
+export function parseOmpModelSettingsResponse(value: unknown): OmpModelSettingsResponse {
+  const record = requireRecord(value);
+  return { path: requireString(record, "path"), exists: requireBoolean(record, "exists"), config: parseOmpModelSettingsConfig(record["config"]) };
+}
+
+function parseOmpModelSettingsConfig(value: unknown): OmpModelSettingsConfig {
+  const record = requireRecord(value);
+  const config: OmpModelSettingsConfig = { ...record };
+  if (record["modelRoles"] !== undefined) config.modelRoles = parseStringRecord(record["modelRoles"], "modelRoles");
+  if (record["defaultThinkingLevel"] !== undefined) config.defaultThinkingLevel = parseOmpConfiguredThinkingLevel(record["defaultThinkingLevel"]);
+  if (record["thinkingBudgets"] !== undefined) config.thinkingBudgets = parseOmpThinkingBudgets(record["thinkingBudgets"]);
+  return config;
+}
+
+function parseOmpThinkingBudgets(value: unknown): OmpThinkingBudgets {
+  const record = requireRecord(value);
+  const budgets: OmpThinkingBudgets = { ...record };
+  const minimal = optionalNumber(record, "minimal");
+  const low = optionalNumber(record, "low");
+  const medium = optionalNumber(record, "medium");
+  const high = optionalNumber(record, "high");
+  const xhigh = optionalNumber(record, "xhigh");
+  if (minimal !== undefined) budgets.minimal = minimal;
+  if (low !== undefined) budgets.low = low;
+  if (medium !== undefined) budgets.medium = medium;
+  if (high !== undefined) budgets.high = high;
+  if (xhigh !== undefined) budgets.xhigh = xhigh;
+  return budgets;
+}
+
+function parseOmpConfiguredThinkingLevel(value: unknown): OmpThinkingLevel | "auto" {
+  if (value === "auto") return value;
+  return parseOmpThinkingLevel(value);
+}
+
+function parseOmpThinkingLevel(value: unknown): OmpThinkingLevel {
+  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  throw new Error("Invalid OMP thinking level");
+}
+
+function parseOmpModelsConfig(value: unknown): OmpModelsConfig {
+  const record = requireRecord(value);
+  const config: OmpModelsConfig = { ...record };
+  if (record["providers"] !== undefined) config.providers = parseOmpProviders(record["providers"]);
+  if (record["equivalence"] !== undefined) config.equivalence = parseOmpEquivalence(record["equivalence"]);
+  return config;
+}
+
+function parseOmpEquivalence(value: unknown): NonNullable<OmpModelsConfig["equivalence"]> {
+  const record = requireRecord(value);
+  const equivalence: NonNullable<OmpModelsConfig["equivalence"]> = { ...record };
+  if (record["overrides"] !== undefined) equivalence.overrides = parseStringRecord(record["overrides"], "equivalence.overrides");
+  if (record["exclude"] !== undefined) equivalence.exclude = arrayOf((item) => {
+    if (typeof item !== "string") throw new Error("Expected equivalence.exclude item string");
+    return item;
+  })(record["exclude"]);
+  return equivalence;
+}
+
+function parseOmpProviders(value: unknown): Record<string, OmpProviderConfig> {
+  const record = requireRecord(value);
+  const providers: Record<string, OmpProviderConfig> = {};
+  for (const [id, provider] of Object.entries(record)) providers[id] = parseOmpProviderConfig(provider);
+  return providers;
+}
+
+function parseOmpProviderConfig(value: unknown): OmpProviderConfig {
+  const record = requireRecord(value);
+  const provider: OmpProviderConfig = { ...record };
+  const baseUrl = optionalString(record, "baseUrl");
+  const apiKey = optionalString(record, "apiKey");
+  const api = optionalOmpModelApi(record["api"]);
+  const auth = optionalOmpProviderAuth(record["auth"]);
+  const authHeader = optionalBoolean(record, "authHeader");
+  const disableStrictTools = optionalBoolean(record, "disableStrictTools");
+  if (baseUrl !== undefined) provider.baseUrl = baseUrl;
+  if (apiKey !== undefined) provider.apiKey = apiKey;
+  if (api !== undefined) provider.api = api;
+  if (auth !== undefined) provider.auth = auth;
+  if (record["headers"] !== undefined) provider.headers = parseStringRecord(record["headers"], "headers");
+  if (authHeader !== undefined) provider.authHeader = authHeader;
+  if (record["compat"] !== undefined) provider.compat = requireRecord(record["compat"]);
+  if (record["discovery"] !== undefined) provider.discovery = parseOmpDiscovery(record["discovery"]);
+  if (record["models"] !== undefined) provider.models = arrayOf(parseOmpModelDefinition)(record["models"]);
+  if (record["modelOverrides"] !== undefined) provider.modelOverrides = requireRecord(record["modelOverrides"]);
+  if (disableStrictTools !== undefined) provider.disableStrictTools = disableStrictTools;
+  return provider;
+}
+
+function parseOmpModelDefinition(value: unknown): OmpModelDefinition {
+  const record = requireRecord(value);
+  const model: OmpModelDefinition = { ...record, id: requireString(record, "id") };
+  const name = optionalString(record, "name");
+  const api = optionalOmpModelApi(record["api"]);
+  const reasoning = optionalBoolean(record, "reasoning");
+  const contextWindow = optionalNumber(record, "contextWindow");
+  const maxTokens = optionalNumber(record, "maxTokens");
+  const contextPromotionTarget = optionalString(record, "contextPromotionTarget");
+  if (name !== undefined) model.name = name;
+  if (api !== undefined) model.api = api;
+  if (reasoning !== undefined) model.reasoning = reasoning;
+  if (record["input"] !== undefined) model.input = arrayOf(parseOmpModelInput)(record["input"]);
+  if (contextWindow !== undefined) model.contextWindow = contextWindow;
+  if (maxTokens !== undefined) model.maxTokens = maxTokens;
+  if (record["cost"] !== undefined) model.cost = parseOmpModelCost(record["cost"]);
+  if (contextPromotionTarget !== undefined) model.contextPromotionTarget = contextPromotionTarget;
+  return model;
+}
+
+function parseOmpModelInput(value: unknown): "text" | "image" {
+  if (value === "text" || value === "image") return value;
+  throw new Error("Invalid model input modality");
+}
+
+function parseOmpModelCost(value: unknown): OmpModelCost {
+  const record = requireRecord(value);
+  const cost: OmpModelCost = { ...record };
+  const input = optionalNumber(record, "input");
+  const output = optionalNumber(record, "output");
+  const cacheRead = optionalNumber(record, "cacheRead");
+  const cacheWrite = optionalNumber(record, "cacheWrite");
+  if (input !== undefined) cost.input = input;
+  if (output !== undefined) cost.output = output;
+  if (cacheRead !== undefined) cost.cacheRead = cacheRead;
+  if (cacheWrite !== undefined) cost.cacheWrite = cacheWrite;
+  return cost;
+}
+
+function parseOmpDiscovery(value: unknown): NonNullable<OmpProviderConfig["discovery"]> {
+  const record = requireRecord(value);
+  return { type: parseOmpProviderDiscoveryType(record["type"]) };
+}
+
+function optionalOmpModelApi(value: unknown): OmpModelApi | undefined {
+  if (value === undefined) return undefined;
+  return parseOmpModelApi(value);
+}
+
+function parseOmpModelApi(value: unknown): OmpModelApi {
+  if (value === "openai-completions" || value === "openai-responses" || value === "openai-codex-responses" || value === "azure-openai-responses" || value === "anthropic-messages" || value === "google-generative-ai" || value === "google-vertex") return value;
+  throw new Error("Invalid OMP model api");
+}
+
+function optionalOmpProviderAuth(value: unknown): OmpProviderAuth | undefined {
+  if (value === undefined) return undefined;
+  if (value === "apiKey" || value === "none" || value === "oauth") return value;
+  throw new Error("Invalid OMP provider auth");
+}
+
+function parseOmpProviderDiscoveryType(value: unknown): OmpProviderDiscoveryType {
+  if (value === "ollama" || value === "llama.cpp" || value === "lm-studio" || value === "openai-models-list" || value === "proxy") return value;
+  throw new Error("Invalid OMP provider discovery type");
 }
 
 function parseThinkingLevel(value: unknown): ThinkingLevel {
@@ -648,6 +807,13 @@ function optionalNumber(record: Record<string, unknown>, key: string): number | 
   const value = record[key];
   if (value === undefined) return undefined;
   if (typeof value !== "number") throw new Error(`Expected optional number field: ${key}`);
+  return value;
+}
+
+function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") throw new Error(`Expected optional boolean field: ${key}`);
   return value;
 }
 

@@ -1,4 +1,4 @@
-import type { FileSuggestion, PiWebConfigValues, RunTerminalCommandInput, TerminalCommandRun, TerminalCommandRunFilter } from "../../../shared/apiTypes";
+import type { FileSuggestion, OmpModelSettingsConfig, OmpModelsConfig, PiWebConfigValues, RunTerminalCommandInput, TerminalCommandRun, TerminalCommandRunFilter } from "../../../shared/apiTypes";
 import { request } from "./http";
 import {
   arrayOf,
@@ -20,6 +20,8 @@ import {
   parseMessagePage,
   parseModelSelectionResponse,
   parseOAuthFlowState,
+  parseOmpModelSettingsResponse,
+  parseOmpModelsConfigResponse,
   parsePiWebConfigResponse,
   parsePiWebPluginsResponse,
   parsePiWebStatusResponse,
@@ -57,6 +59,13 @@ export const configApi = {
 
 export const pluginsApi = {
   plugins: () => request("/api/plugins", parsePiWebPluginsResponse),
+};
+
+export const modelConfigApi = {
+  modelConfig: (machineId = "local") => request(`${machinePrefix(machineId)}/model-config`, parseOmpModelsConfigResponse),
+  saveModelConfig: (config: OmpModelsConfig, machineId = "local") => request(`${machinePrefix(machineId)}/model-config`, parseOmpModelsConfigResponse, { method: "PUT", body: JSON.stringify({ config }) }),
+  modelSettings: (machineId = "local") => request(`${machinePrefix(machineId)}/model-settings`, parseOmpModelSettingsResponse),
+  saveModelSettings: (config: OmpModelSettingsConfig, machineId = "local") => request(`${machinePrefix(machineId)}/model-settings`, parseOmpModelSettingsResponse, { method: "PUT", body: JSON.stringify({ config }) }),
 };
 
 export const activityApi = {

@@ -162,6 +162,80 @@ export interface OAuthFlowState {
   error?: string;
 }
 
+export type OmpModelApi = "openai-completions" | "openai-responses" | "openai-codex-responses" | "azure-openai-responses" | "anthropic-messages" | "google-generative-ai" | "google-vertex";
+export type OmpProviderAuth = "apiKey" | "none" | "oauth";
+export type OmpProviderDiscoveryType = "ollama" | "llama.cpp" | "lm-studio" | "openai-models-list" | "proxy";
+export type OmpThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export interface OmpModelCost {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+export interface OmpModelDefinition {
+  [key: string]: unknown;
+  id: string;
+  name?: string;
+  api?: OmpModelApi;
+  reasoning?: boolean;
+  input?: ("text" | "image")[];
+  contextWindow?: number;
+  maxTokens?: number;
+  cost?: OmpModelCost;
+  contextPromotionTarget?: string;
+}
+
+export interface OmpProviderConfig {
+  [key: string]: unknown;
+  baseUrl?: string;
+  apiKey?: string;
+  api?: OmpModelApi;
+  auth?: OmpProviderAuth;
+  headers?: Record<string, string>;
+  authHeader?: boolean;
+  compat?: Record<string, unknown>;
+  discovery?: { type: OmpProviderDiscoveryType };
+  models?: OmpModelDefinition[];
+  modelOverrides?: Record<string, unknown>;
+  disableStrictTools?: boolean;
+}
+
+export interface OmpModelsConfig {
+  [key: string]: unknown;
+  providers?: Record<string, OmpProviderConfig>;
+  equivalence?: { overrides?: Record<string, string>; exclude?: string[] };
+}
+
+export interface OmpModelsConfigResponse {
+  path: string;
+  exists: boolean;
+  config: OmpModelsConfig;
+}
+
+export interface OmpThinkingBudgets {
+  [key: string]: unknown;
+  minimal?: number;
+  low?: number;
+  medium?: number;
+  high?: number;
+  xhigh?: number;
+}
+
+export interface OmpModelSettingsConfig {
+  [key: string]: unknown;
+  modelRoles?: Record<string, string>;
+  defaultThinkingLevel?: OmpThinkingLevel | "auto";
+  thinkingBudgets?: OmpThinkingBudgets;
+}
+
+export interface OmpModelSettingsResponse {
+  path: string;
+  exists: boolean;
+  config: OmpModelSettingsConfig;
+}
+
 export interface ModelSelectionResponse {
   models: SessionModel[];
 }
@@ -317,7 +391,7 @@ export interface TerminalCommandRunFilter {
 export type PiWebServiceComponent = "web" | "sessiond";
 export type PiWebStatusSeverity = "info" | "warning" | "error";
 export type PiWebInstallationKind = "pi-package" | "npm-global" | "local" | "unknown";
-export type PiWebAgentRuntime = "earendil" | "omp";
+export type PiWebAgentRuntime = "omp";
 
 export interface PiWebInstallationInfo {
   kind: PiWebInstallationKind;

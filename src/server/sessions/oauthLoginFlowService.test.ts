@@ -1,7 +1,18 @@
-import type { OAuthLoginCallbacks } from "@earendil-works/pi-ai";
-import type { AuthStorage } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OAuthLoginFlowService } from "./oauthLoginFlowService.js";
+
+interface OAuthLoginCallbacks {
+  signal?: AbortSignal;
+  onAuth(info: { url: string; instructions?: string }): void;
+  onPrompt(prompt: { message: string; placeholder?: string; allowEmpty?: boolean }): Promise<string>;
+  onManualCodeInput(): Promise<string>;
+  onSelect(prompt: { message: string; options: readonly { id: string; label: string }[] }): Promise<string | undefined>;
+  onProgress(message: string): void;
+}
+
+interface TestAuthStorage {
+  login(providerId: string, callbacks: OAuthLoginCallbacks): Promise<void>;
+}
 
 type LoginHandler = (providerId: string, callbacks: OAuthLoginCallbacks) => Promise<void>;
 
@@ -18,9 +29,9 @@ describe("OAuthLoginFlowService", () => {
       providerName: "Test Provider",
       authStorage: fakeAuthStorage(async (_providerId, callbacks) => {
         callbacks.onAuth({ url: "https://example.test/auth", instructions: "Open it" });
-        callbacks.onProgress?.("Waiting for code");
+        callbacks.onProgress("Waiting for code");
         promptValue = await callbacks.onPrompt({ message: "Paste code", placeholder: "code" });
-        callbacks.onProgress?.(`Got ${promptValue}`);
+        callbacks.onProgress(`Got ${promptValue}`);
       }),
     });
 
@@ -45,9 +56,7 @@ describe("OAuthLoginFlowService", () => {
       providerId: "test-provider",
       providerName: "Test Provider",
       authStorage: fakeAuthStorage(async (_providerId, callbacks) => {
-        const select = callbacks.onSelect;
-        if (select === undefined) throw new Error("Expected select callback");
-        selectedValue = await select({
+        selectedValue = await callbacks.onSelect({
           message: "Choose account",
           options: [{ id: "work", label: "Work" }, { id: "personal", label: "Personal" }],
         });
@@ -73,9 +82,7 @@ describe("OAuthLoginFlowService", () => {
       providerId: "test-provider",
       providerName: "Test Provider",
       authStorage: fakeAuthStorage(async (_providerId, callbacks) => {
-        const manualCodeInput = callbacks.onManualCodeInput;
-        if (manualCodeInput === undefined) throw new Error("Expected manual-code callback");
-        manualValue = await manualCodeInput();
+        manualValue = await callbacks.onManualCodeInput();
       }),
     });
 
@@ -162,7 +169,7 @@ describe("OAuthLoginFlowService", () => {
   });
 });
 
-function fakeAuthStorage(login: LoginHandler): Pick<AuthStorage, "login"> {
+function fakeAuthStorage(login: LoginHandler): TestAuthStorage {
   return { login };
 }
 

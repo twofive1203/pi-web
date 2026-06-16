@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/consistent-type-assertions, @typescript-eslint/no-unnecessary-type-assertion -- Runtime-neutral title generation bridges structurally compatible Earendil and OMP SDK types. */
+import type { Context, Message, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
 
 const SESSION_NAME_TIMEOUT_MS = 10_000;
 const SESSION_NAME_MAX_INPUT_CHARS = 4_000;
@@ -13,35 +13,29 @@ interface AssistantMessageLike {
   content: readonly unknown[];
 }
 
-interface SessionNameStreamOptions {
-  maxTokens: number;
-  reasoning: "minimal";
-  signal: AbortSignal;
-  apiKey?: string;
-  headers?: Record<string, string>;
-}
-
 type SessionNameEvent =
   | { type: "text_delta"; delta: string }
   | { type: "done"; message: AssistantMessageLike }
   | { type: "error" }
   | { type: string };
 
+interface PiAiRuntimeModule {
+  streamSimple(model: Model, context: Context, options: SimpleStreamOptions): AsyncIterable<SessionNameEvent>;
+}
+
 export async function generateShortSessionName(modelRegistry: unknown, model: ModelLike, firstMessage: string): Promise<string | undefined> {
-  const context = {
-    systemPrompt: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.",
-    messages: [{
-      role: "user" as const,
-      content: `Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`,
-      timestamp: Date.now(),
-    }],
+  if (!isOmpModel(model)) return undefined;
+
+  const context: Context = {
+    systemPrompt: ["Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper."],
+    messages: [userMessage(`Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`)],
   };
   const options = await sessionNameStreamOptions(modelRegistry, model);
   if (options === undefined) return undefined;
 
-  const stream: AsyncIterable<SessionNameEvent> = typeof (modelRegistry as { getApiKeyAndHeaders?: unknown }).getApiKeyAndHeaders === "function"
-    ? await earendilSessionNameStream(model, context, options)
-    : await ompSessionNameStream(model, context, options);
+  const piAi = await importPiAiRuntimeModule();
+  if (piAi === undefined) return undefined;
+  const stream = piAi.streamSimple(model, context, options);
 
   let streamedText = "";
   let finalMessage: AssistantMessageLike | undefined;
@@ -78,6 +72,10 @@ export function cleanSessionName(value: string): string | undefined {
   return title === "" ? undefined : title;
 }
 
+function userMessage(content: string): Message {
+  return { role: "user", content, timestamp: Date.now() };
+}
+
 function textFromAssistant(message: AssistantMessageLike): string {
   return message.content
     .filter(isTextPart)
@@ -85,47 +83,39 @@ function textFromAssistant(message: AssistantMessageLike): string {
     .join("");
 }
 
-async function sessionNameStreamOptions(modelRegistry: unknown, model: ModelLike): Promise<SessionNameStreamOptions | undefined> {
-  const base = {
+async function sessionNameStreamOptions(modelRegistry: unknown, model: Model): Promise<SimpleStreamOptions | undefined> {
+  if (!hasGetApiKey(modelRegistry)) return undefined;
+  const apiKey = await modelRegistry.getApiKey(model);
+  return apiKey === undefined ? undefined : {
     maxTokens: 24,
-    reasoning: "minimal" as const,
+    disableReasoning: true,
     signal: AbortSignal.timeout(SESSION_NAME_TIMEOUT_MS),
+    apiKey,
   };
-  const oldRegistry = modelRegistry as unknown as {
-    getApiKeyAndHeaders?(model: ModelLike): Promise<{ ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false }>;
-  };
-  if (typeof oldRegistry.getApiKeyAndHeaders === "function") {
-    const auth = await oldRegistry.getApiKeyAndHeaders(model);
-    if (!auth.ok) return undefined;
-    return {
-      ...base,
-      ...(auth.apiKey === undefined ? {} : { apiKey: auth.apiKey }),
-      ...(auth.headers === undefined ? {} : { headers: auth.headers }),
-    };
-  }
-
-  const ompRegistry = modelRegistry as unknown as {
-    getApiKey?(model: unknown): Promise<string | undefined>;
-  };
-  if (typeof ompRegistry.getApiKey !== "function") return undefined;
-  const apiKey = await ompRegistry.getApiKey(model);
-  return apiKey === undefined ? undefined : { ...base, apiKey };
 }
 
-async function ompSessionNameStream(model: ModelLike, context: unknown, options: SessionNameStreamOptions): Promise<AsyncIterable<SessionNameEvent>> {
-  const piAi = await import("@oh-my-pi/pi-ai");
-  return piAi.streamSimple(model as never, context as never, options as never) as AsyncIterable<SessionNameEvent>;
+async function importPiAiRuntimeModule(): Promise<PiAiRuntimeModule | undefined> {
+  const module: unknown = await import("@oh-my-pi/pi-ai");
+  return isPiAiRuntimeModule(module) ? module : undefined;
 }
 
-async function earendilSessionNameStream(model: ModelLike, context: unknown, options: SessionNameStreamOptions): Promise<AsyncIterable<SessionNameEvent>> {
-  if (typeof model.api !== "string") return emptySessionNameStream();
-  const piAi = await import("@earendil-works/pi-ai");
-  const provider = piAi.getApiProvider(model.api as never);
-  return provider === undefined ? emptySessionNameStream() : provider.streamSimple(model as never, context as never, options as never) as AsyncIterable<SessionNameEvent>;
+function isPiAiRuntimeModule(value: unknown): value is PiAiRuntimeModule {
+  return typeof value === "object" && value !== null && "streamSimple" in value && typeof value.streamSimple === "function";
 }
 
-async function* emptySessionNameStream(): AsyncIterable<SessionNameEvent> {
-  // Intentionally empty.
+function hasGetApiKey(value: unknown): value is { getApiKey(model: Model): Promise<string | undefined> } {
+  return typeof value === "object" && value !== null && "getApiKey" in value && typeof value.getApiKey === "function";
+}
+
+function isOmpModel(value: ModelLike): value is Model {
+  return typeof value.api === "string"
+    && "id" in value && typeof value.id === "string"
+    && "provider" in value && typeof value.provider === "string"
+    && "name" in value && typeof value.name === "string"
+    && "baseUrl" in value && typeof value.baseUrl === "string"
+    && "input" in value && Array.isArray(value.input)
+    && "cost" in value && typeof value.cost === "object" && value.cost !== null
+    && "maxTokens" in value && typeof value.maxTokens === "number";
 }
 
 function isTextPart(value: unknown): value is { type: "text"; text: string } {

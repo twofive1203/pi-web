@@ -23,21 +23,16 @@
     "plugin-api/unstable.d.ts"
   ],
   "scripts": {
-    "dev": "node scripts/run-dev.mjs stack omp",
-    "dev:omp": "node scripts/run-dev.mjs stack omp",
-    "dev:earendil": "node scripts/run-dev.mjs stack earendil",
+    "dev": "node scripts/run-dev.mjs stack",
+    "dev:omp": "npm run dev",
     "dev:windows": "cmd /c scripts\\\\start-windows.cmd",
     "dev:sessiond": "bun --watch scripts/start-omp-sessiond.mjs",
-    "dev:sessiond:omp": "bun --watch scripts/start-omp-sessiond.mjs",
-    "dev:sessiond:earendil": "tsx watch scripts/start-earendil-sessiond.mjs",
-    "dev:web": "node scripts/run-dev.mjs web omp",
-    "dev:web:omp": "node scripts/run-dev.mjs web omp",
-    "dev:web:earendil": "node scripts/run-dev.mjs web earendil",
+    "dev:sessiond:omp": "npm run dev:sessiond",
+    "dev:web": "node scripts/run-dev.mjs web",
+    "dev:web:omp": "npm run dev:web",
     "dev:web:server:omp": "tsx watch scripts/start-omp-web.mjs",
-    "dev:web:server:earendil": "tsx watch scripts/start-earendil-web.mjs",
     "dev:server": "npm run dev:web",
-    "dev:server:omp": "npm run dev:web:omp",
-    "dev:server:earendil": "npm run dev:web:earendil",
+    "dev:server:omp": "npm run dev:web",
     "dev:client": "vite --host 0.0.0.0",
     "dev:plugins": "node scripts/build-plugins.mjs --watch",
     "build": "tsc -p tsconfig.build.json && npm run build:plugin-api && npm run build:plugins && vite build",
@@ -48,12 +43,9 @@
     "test": "vitest run --config vitest.config.ts",
     "verify": "npm run typecheck && npm run lint && npm test",
     "start": "tsx scripts/start-omp-web.mjs",
-    "start:earendil": "tsx scripts/start-earendil-web.mjs",
     "start:sessiond": "bun scripts/start-omp-sessiond.mjs",
-    "start:sessiond:omp": "bun scripts/start-omp-sessiond.mjs",
-    "start:sessiond:earendil": "tsx scripts/start-earendil-sessiond.mjs",
-    "start:web:omp": "tsx scripts/start-omp-web.mjs",
-    "start:web:earendil": "tsx scripts/start-earendil-web.mjs",
+    "start:sessiond:omp": "npm run start:sessiond",
+    "start:web:omp": "npm start",
     "clean": "rm -rf dist",
     "prepack": "npm run build",
     "pack:dry": "npm pack --dry-run",
@@ -84,12 +76,11 @@
     "lit": "^3.3.1",
     "marked": "^18.0.3",
     "node-pty": "^1.1.0",
-    "ws": "^8.20.1"
+    "ws": "^8.20.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
     "@eslint/js": "^10.0.1",
     "@oh-my-pi/pi-ai": "^15.9.3",
     "@oh-my-pi/pi-coding-agent": "^15.9.3",
@@ -119,18 +110,10 @@
   "homepage": "https://pi-web.dev/",
   "packageManager": "npm@11.11.0",
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.74.0 <1",
-    "@earendil-works/pi-coding-agent": ">=0.74.0 <1",
     "@oh-my-pi/pi-ai": ">=15.9.0 <16",
     "@oh-my-pi/pi-coding-agent": ">=15.9.0 <16"
   },
   "peerDependenciesMeta": {
-    "@earendil-works/pi-ai": {
-      "optional": true
-    },
-    "@earendil-works/pi-coding-agent": {
-      "optional": true
-    },
     "@oh-my-pi/pi-ai": {
       "optional": true
     },

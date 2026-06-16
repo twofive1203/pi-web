@@ -73,6 +73,13 @@ export function createCoreActions(): PluginAction[] {
       run: (context) => context.logoutAuth(),
     },
     {
+      id: "models.configure",
+      title: "Configure OMP Models and Providers",
+      description: "Edit models.yml for custom OMP providers and model entries",
+      group: "Preferences",
+      run: (context) => { context.piWebUnstable?.openSettings?.("models"); },
+    },
+    {
       id: "theme.select",
       title: "Select Theme",
       description: "Choose the PI WEB color theme",

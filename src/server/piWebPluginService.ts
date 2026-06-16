@@ -64,31 +64,6 @@ interface PiWebPluginEntry {
 }
 
 type ArraylessPluginRecord = Omit<PluginRecord, "source" | "scope">;
-export class DefaultPiPackageProvider implements PiPackageProvider {
-  constructor(private readonly cwd = process.cwd(), private readonly agentDir = defaultEarendilAgentDir()) {}
-
-  async listPackages(): Promise<ConfiguredPiPackage[]> {
-    const { DefaultPackageManager, SettingsManager } = await import("@earendil-works/pi-coding-agent");
-    const packageManager = new DefaultPackageManager({
-      cwd: this.cwd,
-      agentDir: this.agentDir,
-      settingsManager: SettingsManager.create(this.cwd, this.agentDir),
-    });
-    return packageManager.listConfiguredPackages().map((configuredPackage) => {
-      const installedPath = configuredPackage.installedPath ?? packageManager.getInstalledPath(configuredPackage.source, configuredPackage.scope);
-      return {
-        source: configuredPackage.source,
-        scope: configuredPackage.scope,
-        ...(installedPath === undefined ? {} : { installedPath }),
-      };
-    });
-  }
-
-  getInstalledPath(): undefined {
-    return undefined;
-  }
-}
-
 export class OmpPiPackageProvider implements PiPackageProvider {
   private installed = new Map<string, string>();
 
@@ -215,20 +190,12 @@ export class PiWebPluginService {
 }
 
 function defaultAgentDirForRuntime(): string {
-  if (process.env["PI_WEB_AGENT_RUNTIME"] === "earendil") return defaultEarendilAgentDir();
   const configured = process.env["PI_WEB_OMP_AGENT_DIR"] ?? process.env["PI_CODING_AGENT_DIR"];
   return configured === undefined || configured === "" ? join(homedir(), ".omp", "agent") : configured;
 }
 
-function defaultEarendilAgentDir(): string {
-  const configured = process.env["PI_CODING_AGENT_DIR"];
-  return configured === undefined || configured === "" ? join(homedir(), ".pi", "agent") : configured;
-}
-
 function defaultPackageProvider(cwd: string, agentDir: string): PiPackageProvider {
-  return process.env["PI_WEB_AGENT_RUNTIME"] === "earendil"
-    ? new DefaultPiPackageProvider(cwd, agentDir)
-    : new OmpPiPackageProvider(cwd, agentDir);
+  return new OmpPiPackageProvider(cwd, agentDir);
 }
 
 function defaultPluginRoots(cwd: string): LocalPluginRoot[] {

@@ -1,6 +1,8 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { AuthService, type AuthChange } from "./authService.js";
+import { AuthService, type AuthChange, type AuthModelRegistry } from "./authService.js";
+
+interface TestCredential { type: "api_key"; key: string; [key: string]: unknown }
+type TestCredentialMap = Record<string, TestCredential>;
 
 describe("AuthService", () => {
   it("saves API keys and emits a global auth change", async () => {
@@ -32,9 +34,21 @@ describe("AuthService", () => {
   });
 });
 
-function createAuthService(data: Parameters<typeof AuthStorage.inMemory>[0] = {}) {
-  const authStorage = AuthStorage.inMemory(data);
-  const modelRegistry = ModelRegistry.create(authStorage);
+function createAuthService(initialData: TestCredentialMap = {}) {
+  const data = new Map(Object.entries(initialData));
+  const authStorage = {
+    get: (provider: string) => data.get(provider),
+    set: (provider: string, credential: TestCredential) => { data.set(provider, credential); },
+    login: () => Promise.resolve(),
+    logout: (provider: string) => { data.delete(provider); },
+    reload: () => undefined,
+    list: () => [...data.keys()],
+  };
+  const modelRegistry: AuthModelRegistry = {
+    authStorage,
+    refresh: () => undefined,
+    getAll: () => [...data.keys()].map((provider) => ({ provider })),
+  };
   const auth = new AuthService({ modelRegistry });
   const changes: AuthChange[] = [];
   auth.subscribe((change) => { changes.push(change); });

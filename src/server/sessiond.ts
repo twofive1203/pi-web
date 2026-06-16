@@ -10,6 +10,10 @@ import { AuthService } from "./sessions/authService.js";
 import { registerAuthRoutes } from "./sessions/authRoutes.js";
 import { PiSessionService } from "./sessions/piSessionService.js";
 import { createOmpSessionProvider } from "./sessions/ompSessionProvider.js";
+import { OmpModelConfigService } from "./sessions/modelConfigService.js";
+import { registerModelConfigRoutes } from "./sessions/modelConfigRoutes.js";
+import { OmpModelSettingsService } from "./sessions/modelSettingsService.js";
+import { registerModelSettingsRoutes } from "./sessions/modelSettingsRoutes.js";
 import { registerSessionRoutes } from "./sessions/sessionRoutes.js";
 import { sessiondSocketPath } from "../sessiond/config.js";
 import { TerminalService } from "./terminals/terminalService.js";
@@ -22,15 +26,17 @@ await app.register(fastifyWebsocket);
 const eventHub = new SessionEventHub();
 const workspaceActivity = new WorkspaceActivityService(eventHub);
 const ompAgentDir = process.env["PI_WEB_OMP_AGENT_DIR"];
-const sessionProvider = process.env["PI_WEB_AGENT_RUNTIME"] === "earendil"
-  ? (await import("./sessions/earendilSessionProvider.js")).createEarendilSessionProvider()
-  : await createOmpSessionProvider(ompAgentDir === undefined || ompAgentDir === "" ? {} : { agentDir: ompAgentDir });
+const sessionProvider = await createOmpSessionProvider(ompAgentDir === undefined || ompAgentDir === "" ? {} : { agentDir: ompAgentDir });
 const auth = new AuthService({ modelRegistry: sessionProvider.modelRegistry });
+const modelConfig = new OmpModelConfigService(sessionProvider.agentDir, sessionProvider.modelRegistry);
+const modelSettings = new OmpModelSettingsService(sessionProvider.agentDir, sessionProvider.modelRegistry);
 const sessions = new PiSessionService(eventHub, { provider: sessionProvider, workspaceActivity });
 auth.subscribe((change) => { void sessions.applyAuthChange(change); });
 const terminals = new TerminalService(eventHub, workspaceActivity);
 registerWorkspaceActivityRoutes(app, workspaceActivity);
 registerAuthRoutes(app, auth);
+registerModelConfigRoutes(app, modelConfig);
+registerModelSettingsRoutes(app, modelSettings);
 registerSessionRoutes(app, sessions, eventHub);
 registerTerminalRoutes(app, terminals);
 

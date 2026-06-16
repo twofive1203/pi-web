@@ -1,4 +1,4 @@
-export type FederatedHttpMethod = "GET" | "POST" | "DELETE";
+export type FederatedHttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 export interface FederatedHttpRouteSpec {
   method: FederatedHttpMethod;
@@ -28,6 +28,10 @@ export const FEDERATED_HTTP_ROUTES = [
   { method: "POST", path: "/terminal-command-runs/:runId/cancel" },
   { method: "GET", path: "/files" },
   { method: "GET", path: "/activity" },
+  { method: "GET", path: "/model-config" },
+  { method: "PUT", path: "/model-config" },
+  { method: "GET", path: "/model-settings" },
+  { method: "PUT", path: "/model-settings" },
   { method: "GET", path: "/sessions" },
   { method: "POST", path: "/sessions" },
   { method: "GET", path: "/sessions/:sessionId/messages" },

@@ -1,9 +1,10 @@
 import { css, html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AppAction } from "../actions";
-import { configApi, pluginsApi, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse } from "../api";
+import { configApi, modelConfigApi, pluginsApi, type OmpModelSettingsConfig, type OmpModelSettingsResponse, type OmpModelsConfig, type OmpModelsConfigResponse, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse } from "../api";
 import type { SettingsSection } from "../settingsRoute";
 import "./settings/SettingsGeneralPanel";
+import "./settings/SettingsModelsPanel";
 import "./settings/SettingsPluginsPanel";
 import "./settings/SettingsShortcutsPanel";
 
@@ -11,10 +12,14 @@ import "./settings/SettingsShortcutsPanel";
 export class SettingsDialog extends LitElement {
   @property({ attribute: false }) section: SettingsSection = "general";
   @property({ attribute: false }) actions: AppAction[] = [];
+  @property() machineId = "local";
+  @property() machineLabel = "local";
   @property({ attribute: false }) onNavigate?: (section: SettingsSection) => void;
   @property({ attribute: false }) onClose?: () => void;
   @property({ attribute: false }) onConfigSaved?: (config: PiWebConfigValues) => void;
   @state() private configResponse: PiWebConfigResponse | undefined;
+  @state() private modelConfigResponse: OmpModelsConfigResponse | undefined;
+  @state() private modelSettingsResponse: OmpModelSettingsResponse | undefined;
   @state() private pluginsResponse: PiWebPluginsResponse | undefined;
   @state() private loading = true;
   @state() private saving = false;
@@ -47,6 +52,7 @@ export class SettingsDialog extends LitElement {
           <div class="settings-body">
             <nav class="settings-nav" aria-label="Settings sections">
               ${this.renderNavButton("general", "General", "Server config")}
+              ${this.renderNavButton("models", "Models", "OMP providers")}
               ${this.renderNavButton("plugins", "Plugins", "Enable and disable")}
               ${this.renderNavButton("shortcuts", "Keyboard", "Shortcuts")}
             </nav>
@@ -62,6 +68,22 @@ export class SettingsDialog extends LitElement {
   private renderActiveSection(): TemplateResult {
     if (this.section === "shortcuts") {
       return html`<settings-shortcuts-panel .actions=${this.actions} .configResponse=${this.configResponse}></settings-shortcuts-panel>`;
+    }
+    if (this.section === "models") {
+      return html`
+        <settings-models-panel
+          .configResponse=${this.modelConfigResponse}
+          .settingsResponse=${this.modelSettingsResponse}
+          .loading=${this.loading}
+          .saving=${this.saving}
+          .error=${this.error}
+          .savedMessage=${this.savedMessage}
+          .machineLabel=${this.machineLabel}
+          .onReload=${() => this.loadModelConfig()}
+          .onSave=${(config: OmpModelsConfig) => this.saveModelConfig(config)}
+          .onSaveSettings=${(config: OmpModelSettingsConfig) => this.saveModelSettings(config)}
+        ></settings-models-panel>
+      `;
     }
     if (this.section === "plugins") {
       return html`
@@ -113,9 +135,32 @@ export class SettingsDialog extends LitElement {
       this.pluginsResponse = plugins;
     } catch (error) {
       this.error = `Failed to load settings: ${errorMessage(error)}`;
+    }
+    try {
+      await this.refreshModelSettingsState();
+    } catch (error) {
+      this.error = `Failed to load OMP model settings: ${errorMessage(error)}`;
     } finally {
       this.loading = false;
     }
+  }
+
+  private async loadModelConfig(): Promise<void> {
+    this.loading = true;
+    this.error = "";
+    try {
+      await this.refreshModelSettingsState();
+    } catch (error) {
+      this.error = `Failed to load OMP model settings: ${errorMessage(error)}`;
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  private async refreshModelSettingsState(): Promise<void> {
+    const [modelConfig, modelSettings] = await Promise.all([modelConfigApi.modelConfig(this.machineId), modelConfigApi.modelSettings(this.machineId)]);
+    this.modelConfigResponse = modelConfig;
+    this.modelSettingsResponse = modelSettings;
   }
 
   private async togglePlugin(pluginId: string, enabled: boolean): Promise<void> {
@@ -144,6 +189,36 @@ export class SettingsDialog extends LitElement {
       this.showSavedMessage();
     } catch (error) {
       this.error = `Failed to save config: ${errorMessage(error)}`;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  private async saveModelConfig(config: OmpModelsConfig): Promise<void> {
+    if (this.saving) return;
+    this.saving = true;
+    this.error = "";
+    this.savedMessage = "";
+    try {
+      this.modelConfigResponse = await modelConfigApi.saveModelConfig(config, this.machineId);
+      this.showSavedMessage();
+    } catch (error) {
+      this.error = `Failed to save OMP model config: ${errorMessage(error)}`;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  private async saveModelSettings(config: OmpModelSettingsConfig): Promise<void> {
+    if (this.saving) return;
+    this.saving = true;
+    this.error = "";
+    this.savedMessage = "";
+    try {
+      this.modelSettingsResponse = await modelConfigApi.saveModelSettings(config, this.machineId);
+      this.showSavedMessage();
+    } catch (error) {
+      this.error = `Failed to save OMP model settings: ${errorMessage(error)}`;
     } finally {
       this.saving = false;
     }

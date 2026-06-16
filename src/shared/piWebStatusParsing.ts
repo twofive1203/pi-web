@@ -33,7 +33,7 @@ export function parsePiWebComponentStatus(value: unknown): PiWebComponentStatus 
     stale,
     available,
     ...(installation === undefined ? {} : { installation }),
-    ...(agentRuntime === "earendil" || agentRuntime === "omp" ? { agentRuntime } : {}),
+    ...(agentRuntime === "omp" ? { agentRuntime } : {}),
     ...(typeof error === "string" ? { error } : {}),
   };
 }

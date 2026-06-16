@@ -1,7 +1,4 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import type { CreateAgentSessionRuntimeFactory } from "@earendil-works/pi-coding-agent";
 import type { ClientArchiveSessionsResponse, ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionStatus, ClientThinkingLevel, SessionUiEvent } from "../types.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
 import type { SessionEventHub } from "../realtime/sessionEventHub.js";
@@ -153,7 +150,7 @@ export interface CreateAgentRuntimeOptions {
   sessionManager: PiSessionManager;
 }
 
-export type CreateAgentRuntime = (createRuntime: CreateAgentSessionRuntimeFactory, options: CreateAgentRuntimeOptions) => Promise<PiSessionRuntime>;
+export type CreateAgentRuntime = (options: CreateAgentRuntimeOptions) => Promise<PiSessionRuntime>;
 
 export interface PiSessionProvider {
   readonly agentDir: string;
@@ -162,11 +159,6 @@ export interface PiSessionProvider {
   createAgentRuntime(options: CreateAgentRuntimeOptions): Promise<PiSessionRuntime>;
 }
 
-
-function defaultEarendilAgentDir(): string {
-  const configured = process.env["PI_CODING_AGENT_DIR"];
-  return configured === undefined || configured === "" ? join(homedir(), ".pi", "agent") : configured;
-}
 
 function emptyAuthStorage(): PiAuthStorage {
   return {
@@ -199,10 +191,6 @@ function emptySessionManagerGateway(): PiSessionManagerGateway {
   };
 }
 
-const unconfiguredRuntimeFactory: CreateAgentSessionRuntimeFactory = () => {
-  throw new Error("PiSessionService requires a session runtime provider");
-};
-
 const unconfiguredCreateAgentRuntime: CreateAgentRuntime = () => {
   throw new Error("PiSessionService requires a session runtime provider");
 };
@@ -210,7 +198,6 @@ export interface PiSessionServiceDependencies {
   archiveStore?: SessionArchiveRepository;
   agentDir?: string;
   sessionManager?: PiSessionManagerGateway;
-  createRuntime?: CreateAgentSessionRuntimeFactory;
   createAgentRuntime?: CreateAgentRuntime;
   modelRegistry?: PiModelRegistry;
   provider?: PiSessionProvider;
@@ -229,7 +216,6 @@ export class PiSessionService {
   private readonly archiveStore: SessionArchiveRepository;
   private readonly agentDir: string;
   private readonly sessionManager: PiSessionManagerGateway;
-  private readonly createRuntime: CreateAgentSessionRuntimeFactory;
   private readonly createAgentRuntime: CreateAgentRuntime;
   private readonly modelRegistry: PiModelRegistry;
   private readonly workspaceActivity: Pick<WorkspaceActivityService, "applySessionStatus" | "applySessionActivity" | "removeSession" | "reconcileSessionActivity"> | undefined;
@@ -237,11 +223,10 @@ export class PiSessionService {
   constructor(private readonly events: SessionEventHub, deps: PiSessionServiceDependencies = {}) {
     const provider = deps.provider;
     this.archiveStore = deps.archiveStore ?? new SessionArchiveStore();
-    this.agentDir = deps.agentDir ?? provider?.agentDir ?? defaultEarendilAgentDir();
+    this.agentDir = deps.agentDir ?? provider?.agentDir ?? "";
     this.sessionManager = deps.sessionManager ?? provider?.sessionManager ?? emptySessionManagerGateway();
     this.modelRegistry = deps.modelRegistry ?? provider?.modelRegistry ?? emptyModelRegistry();
-    this.createRuntime = deps.createRuntime ?? unconfiguredRuntimeFactory;
-    this.createAgentRuntime = deps.createAgentRuntime ?? (provider === undefined ? unconfiguredCreateAgentRuntime : (_createRuntime, options) => provider.createAgentRuntime(options));
+    this.createAgentRuntime = deps.createAgentRuntime ?? (provider === undefined ? unconfiguredCreateAgentRuntime : (options) => provider.createAgentRuntime(options));
     this.workspaceActivity = deps.workspaceActivity;
     this.heartbeat = setInterval(() => { this.publishHeartbeats(); }, deps.heartbeatIntervalMs ?? 2000);
     this.commandService = new SessionCommandService(
@@ -651,7 +636,7 @@ export class PiSessionService {
   }
 
   private async create(sessionManager: PiSessionManager, cwd: string): Promise<ActiveSession<PiSessionRuntime>> {
-    const runtime = await this.createAgentRuntime(this.createRuntime, { cwd, agentDir: this.agentDir, sessionManager });
+    const runtime = await this.createAgentRuntime({ cwd, agentDir: this.agentDir, sessionManager });
     const active: ActiveSession<PiSessionRuntime> = { runtime, unsubscribe: noop };
     this.bindRuntime(active);
     runtime.setRebindSession(() => {

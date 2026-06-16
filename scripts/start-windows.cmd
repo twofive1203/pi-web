@@ -39,7 +39,6 @@ exit /b 0
 
 :sessiond
 cd /d "%ROOT%" || exit /b 1
-set "PI_WEB_AGENT_RUNTIME=omp"
 set "PI_WEB_SESSIOND_PORT=8704"
 call npm run dev:sessiond:omp
 exit /b %ERRORLEVEL%

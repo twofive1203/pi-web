@@ -20,7 +20,7 @@ const webServiceName = "pi-web.service";
 const uiDevServiceName = "pi-web-ui-dev.service";
 
 type InstallMode = "production" | "dev";
-type AgentRuntime = "earendil" | "omp";
+type AgentRuntime = "omp";
 type ServiceBackendKind = "systemd" | "launchd";
 type ServiceId = "sessiond" | "web" | "uiDev";
 type Check = [string, string[]];
@@ -236,8 +236,8 @@ function parseInstallOptions(args: string[]): InstallOptions {
 }
 
 function parseAgentRuntime(value: string): AgentRuntime {
-  if (value === "earendil" || value === "omp") return value;
-  throw new Error(`Unsupported runtime: ${value}`);
+  if (value === "omp") return "omp";
+  throw new Error(`Unsupported runtime: ${value}. PI WEB now supports the OMP runtime only.`);
 }
 
 function shellSingleQuote(value: string): string {
@@ -369,9 +369,9 @@ function serviceExecutable(envName: "PI_WEB_SERVER_EXEC" | "PI_WEB_SESSIOND_EXEC
   return commandExecutable(command, backend);
 }
 
-function resolveServiceExecutables(backend: ServiceBackend, runtime: AgentRuntime = "omp"): ServiceExecutables {
+function resolveServiceExecutables(backend: ServiceBackend): ServiceExecutables {
   return {
-    sessiond: runtime === "omp" ? ompSessiondExecutable(backend) : serviceExecutable("PI_WEB_SESSIOND_EXEC", "pi-web-sessiond", packageEntrypointPath("sessiond"), backend),
+    sessiond: ompSessiondExecutable(backend),
     web: serviceExecutable("PI_WEB_SERVER_EXEC", "pi-web-server", packageEntrypointPath("server"), backend),
   };
 }
@@ -388,10 +388,6 @@ function describeServiceShell(): string {
 
 function configEnvironment(options: InstallOptions, configPath: string): Record<string, string> {
   return options.config === undefined ? {} : { PI_WEB_CONFIG: configPath };
-}
-
-function agentRuntimeEnvironment(runtime: AgentRuntime): Record<string, string> {
-  return runtime === "earendil" ? { PI_WEB_AGENT_RUNTIME: "earendil" } : {};
 }
 
 function serviceRefList(ids: ServiceId[]): ServiceRef[] {
@@ -429,7 +425,7 @@ function productionServiceDefinitions(options: InstallOptions, configPath: strin
       description: "PI WEB session daemon",
       shellCommand: `exec ${executables.sessiond.command}`,
       restart: "on-failure",
-      environment: agentRuntimeEnvironment(options.runtime),
+      environment: {},
     },
     {
       ...serviceRefs.web,
@@ -447,7 +443,7 @@ function devRootPath(): string {
   return resolve(process.cwd());
 }
 
-function validateDevCheckout(root: string, runtime: AgentRuntime): void {
+function validateDevCheckout(root: string): void {
   const packageJsonPath = join(root, "package.json");
   if (!existsSync(packageJsonPath)) {
     throw new Error(`Development mode must be installed from a PI WEB checkout. Missing package.json: ${packageJsonPath}`);
@@ -460,7 +456,7 @@ function validateDevCheckout(root: string, runtime: AgentRuntime): void {
 
   const scripts = parsed["scripts"];
   if (!isRecord(scripts)) throw new Error(`Development mode requires npm scripts in ${packageJsonPath}.`);
-  const requiredScripts = runtime === "omp" ? ["start:sessiond:omp", "dev:web:omp", "dev:client"] : ["start:sessiond:earendil", "dev:web:earendil", "dev:client"];
+  const requiredScripts = ["start:sessiond:omp", "dev:web:omp", "dev:client"];
   const missing = requiredScripts.filter((script) => typeof scripts[script] !== "string");
   if (missing.length > 0) throw new Error(`Development mode requires missing npm scripts: ${missing.join(", ")}.`);
 }
@@ -470,17 +466,17 @@ function devServiceDefinitions(options: InstallOptions, configPath: string, root
     {
       ...serviceRefs.sessiond,
       description: "PI WEB session daemon (dev)",
-      shellCommand: `exec npm run ${options.runtime === "omp" ? "start:sessiond:omp" : "start:sessiond:earendil"}`,
+      shellCommand: "exec npm run start:sessiond:omp",
       restart: "never",
-      environment: agentRuntimeEnvironment(options.runtime),
+      environment: {},
       workingDirectory: root,
     },
     {
       ...serviceRefs.uiDev,
       description: "PI WEB UI dev server",
-      shellCommand: `exec /usr/bin/env bash -c ${serviceShellQuote(options.runtime === "omp" ? 'trap "kill 0" EXIT; npm run dev:web:omp & npm run dev:client & wait' : 'trap "kill 0" EXIT; npm run dev:web:earendil & npm run dev:client & wait')}`,
+      shellCommand: `exec /usr/bin/env bash -c ${serviceShellQuote('trap "kill 0" EXIT; npm run dev:web:omp & npm run dev:client & wait')}`,
       restart: "never",
-      environment: { ...configEnvironment(options, configPath), ...agentRuntimeEnvironment(options.runtime) },
+      environment: configEnvironment(options, configPath),
       after: ["sessiond"],
       wants: ["sessiond"],
       workingDirectory: root,
@@ -698,15 +694,8 @@ function serviceInstallMode(backend: ServiceBackend): string {
   return "partial";
 }
 
-function installedAgentRuntime(backend: ServiceBackend | undefined): AgentRuntime {
-  const envRuntime = process.env["PI_WEB_AGENT_RUNTIME"];
-  if (envRuntime === "earendil") return "earendil";
-  if (envRuntime === "omp") return "omp";
-  if (backend === undefined || !serviceFileExists(backend, serviceRefs.sessiond)) return "omp";
-  const serviceText = readFileSync(serviceFilePath(backend, serviceRefs.sessiond), "utf8");
-  if (serviceText.includes("PI_WEB_AGENT_RUNTIME=earendil") || serviceText.includes("start:sessiond:earendil") || serviceText.includes("dev:web:earendil")) return "earendil";
-  if (serviceText.includes("PI_WEB_AGENT_RUNTIME=omp") || serviceText.includes("start:sessiond:omp") || serviceText.includes("dev:web:omp") || serviceText.includes("bun ")) return "omp";
-  return "earendil";
+function installedAgentRuntime(): AgentRuntime {
+  return "omp";
 }
 
 function makeServiceRuntimeStatus(ref: ServiceRef, health: ServiceHealth, detail: string, target: string, filePath: string, pid?: string): ServiceRuntimeStatus {
@@ -780,7 +769,7 @@ function printServiceStatus(status: ServiceRuntimeStatus): void {
 
 function printServiceStatusReport(backend: ServiceBackend): boolean {
   const refs = statusServiceRefs(backend);
-  console.log(`PI WEB services: ${serviceInstallMode(backend)} (${backend.label}, runtime ${installedAgentRuntime(backend)})`);
+  console.log(`PI WEB services: ${serviceInstallMode(backend)} (${backend.label}, runtime ${installedAgentRuntime()})`);
   if (refs.length === 0) {
     console.log("✗ no PI WEB service files found");
     console.log("  Run `pi-web install` or `pi-web install --dev`.");
@@ -805,19 +794,19 @@ function baseShellChecks(backend: ServiceBackend): Check[] {
   return checks;
 }
 
-function devInstallChecks(backend: ServiceBackend, root: string, runtime: AgentRuntime): Check[] {
+function devInstallChecks(backend: ServiceBackend, root: string): Check[] {
   const shell = serviceShellLabel();
   const checks: Check[] = [
     [`${shell} can find npm`, serviceShellCommand(commandCheck("npm"), root)],
     [`${shell} can find bash`, serviceShellCommand(commandCheck("bash"), root)],
   ];
-  if (runtime === "omp") checks.push([`${shell} can find bun`, serviceShellCommand(commandWithVersionCheck("bun"), root)]);
+  checks.push([`${shell} can find bun`, serviceShellCommand(commandWithVersionCheck("bun"), root)]);
   if (backend.kind === "systemd") {
     checks.push(
       [`systemd user ${shell} can find npm`, systemdUserServiceShellCommand(commandCheck("npm"), root)],
       [`systemd user ${shell} can find bash`, systemdUserServiceShellCommand(commandCheck("bash"), root)],
     );
-    if (runtime === "omp") checks.push([`systemd user ${shell} can find bun`, systemdUserServiceShellCommand(commandWithVersionCheck("bun"), root)]);
+    checks.push([`systemd user ${shell} can find bun`, systemdUserServiceShellCommand(commandWithVersionCheck("bun"), root)]);
   }
   return checks;
 }
@@ -826,7 +815,7 @@ function installPreflightChecks(backend: ServiceBackend, options: InstallOptions
   return [
     ...backendAvailabilityChecks(backend),
     ...baseShellChecks(backend),
-    ...(options.mode === "dev" && devRoot !== undefined ? devInstallChecks(backend, devRoot, options.runtime) : []),
+    ...(options.mode === "dev" && devRoot !== undefined ? devInstallChecks(backend, devRoot) : []),
     ...(options.mode === "production" && executables !== undefined ? [...executables.web.checks, ...executables.sessiond.checks] : []),
   ];
 }
@@ -835,9 +824,9 @@ async function install(args: string[]): Promise<void> {
   const backend = requireServiceBackend("pi-web install");
   const options = parseInstallOptions(args);
   const devRoot = options.mode === "dev" ? devRootPath() : undefined;
-  if (devRoot !== undefined) validateDevCheckout(devRoot, options.runtime);
+  if (devRoot !== undefined) validateDevCheckout(devRoot);
 
-  const executables = options.mode === "production" ? resolveServiceExecutables(backend, options.runtime) : undefined;
+  const executables = options.mode === "production" ? resolveServiceExecutables(backend) : undefined;
   console.log(`Running PI WEB ${options.mode} install preflight checks...`);
   console.log(`Agent runtime: ${options.runtime}`);
   console.log(`Service backend: ${backend.label}`);
@@ -850,7 +839,7 @@ async function install(args: string[]): Promise<void> {
   const configPath = await writeInitialConfig(options);
   const services = options.mode === "dev"
     ? devServiceDefinitions(options, configPath, devRoot ?? devRootPath())
-    : productionServiceDefinitions(options, configPath, executables ?? resolveServiceExecutables(backend, options.runtime));
+    : productionServiceDefinitions(options, configPath, executables ?? resolveServiceExecutables(backend));
 
   await installNativeServices(backend, services);
 
@@ -960,13 +949,12 @@ function doctorChecks(): Check[] {
   const shell = serviceShellLabel();
   const backend = currentServiceBackend();
   if (backend === undefined) {
-    const runtime = installedAgentRuntime(undefined);
     const checks: Check[] = [
       [`${shell} can find node >= 22`, serviceShellCommand(nodeVersionCheck())],
       [`${shell} can find npm`, serviceShellCommand(commandWithVersionCheck("npm"))],
       [`${shell} can find pi`, serviceShellCommand(commandWithVersionCheck("pi"))],
     ];
-    if (runtime === "omp") checks.push([`${shell} can find bun`, serviceShellCommand(commandWithVersionCheck("bun"))]);
+    checks.push([`${shell} can find bun`, serviceShellCommand(commandWithVersionCheck("bun"))]);
     return checks;
   }
 
@@ -976,8 +964,7 @@ function doctorChecks(): Check[] {
     [`${shell} can find npm`, serviceShellCommand(commandWithVersionCheck("npm"))],
     [`${shell} can find pi`, serviceShellCommand(commandWithVersionCheck("pi"))],
   ];
-  const runtime = installedAgentRuntime(backend);
-  const executables = resolveServiceExecutables(backend, runtime);
+  const executables = resolveServiceExecutables(backend);
   checks.push(...executables.web.checks, ...executables.sessiond.checks);
   if (backend.kind === "systemd") {
     checks.push([`systemd user ${shell} can find pi`, systemdUserServiceShellCommand(commandWithVersionCheck("pi"))]);
@@ -1107,7 +1094,7 @@ function help(): void {
   console.log(`PI WEB
 
 Usage:
-  pi-web install [--dev] [--runtime earendil|omp] [--host 127.0.0.1] [--port 8504] [--config ~/.config/pi-web/config.json]
+  pi-web install [--dev] [--runtime omp] [--host 127.0.0.1] [--port 8504] [--config ~/.config/pi-web/config.json]
   pi-web uninstall
   pi-web start|stop|restart|status|logs
   pi-web doctor
@@ -1119,7 +1106,7 @@ Recommended install:
 
 Development service install from a checkout:
   pi-web install --dev
-  pi-web install --dev --runtime earendil
+  pi-web install --dev --runtime omp
 `);
 }
 

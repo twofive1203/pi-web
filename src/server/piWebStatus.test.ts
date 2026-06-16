@@ -8,11 +8,9 @@ import type { PiWebComponentStatus } from "../shared/apiTypes.js";
 
 const originalSkipVersionCheck = process.env["PI_WEB_SKIP_VERSION_CHECK"];
 const originalHome = process.env["HOME"];
-const originalAgentRuntime = process.env["PI_WEB_AGENT_RUNTIME"];
 
 afterEach(() => {
   restoreEnv("PI_WEB_SKIP_VERSION_CHECK", originalSkipVersionCheck);
-  restoreEnv("PI_WEB_AGENT_RUNTIME", originalAgentRuntime);
   restoreEnv("HOME", originalHome);
   vi.restoreAllMocks();
 });
@@ -25,15 +23,8 @@ describe("PI WEB status", () => {
   });
 
   it("defaults session daemon status to omp runtime", async () => {
-    delete process.env["PI_WEB_AGENT_RUNTIME"];
     const status = await getPiWebComponentStatus("sessiond");
     expect(status.agentRuntime).toBe("omp");
-  });
-
-  it("reports earendil session daemon status when explicitly selected", async () => {
-    process.env["PI_WEB_AGENT_RUNTIME"] = "earendil";
-    const status = await getPiWebComponentStatus("sessiond");
-    expect(status.agentRuntime).toBe("earendil");
   });
   it("returns installed and running version components without release metadata", async () => {
     const daemon = daemonWithComponent({
